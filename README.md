@@ -253,7 +253,7 @@ With no existing receive-state file, the first scan marks complete messages alre
 
 The printable hardware is maintained in **[Ben-3D-Prints → SIM7600 iMessage Gateway](https://github.com/Yu-Ren-NEU/Ben-3D-Prints/tree/main/models/sim7600-imessage-gateway)**.
 
-It includes the final V0.32 three-piece enclosure (base, lid carrier and top cover), STL/STEP files, CAD source, dimensions and print notes, plus interchangeable robot, astronaut, square-headed cat, and retro TV figurines with previews. See that directory for download links, licensing and physical fit status. The final enclosure has been owner-tested; replacement peg fit still needs verification. The third-party-derived Dou adaptation is excluded because its source license prohibits redistribution of modified material.
+It includes the final three-piece enclosure (base, lid carrier and top cover), STL/STEP files, CAD source, dimensions and print notes, plus interchangeable robot, astronaut, square-headed cat, and retro TV figurines with previews. See that directory for download links, licensing and physical fit status. The final enclosure has been owner-tested; replacement peg fit still needs verification. The third-party-derived Dou adaptation is excluded because its source license prohibits redistribution of modified material.
 
 ## Verification and remaining work
 
@@ -267,7 +267,7 @@ It includes the final V0.32 three-piece enclosure (base, lid carrier and top cov
 | Offline checks | 21 protocol, persistence, report-matching, and delivery-observation tests passed; Python and Foundation compilation checked. |
 | New live queue test, 2026-10-10 | Complete test SMS persisted; iMessage submitted once and matching GUID reported delivered; SIM storage checked at 0/40. |
 | Carrier delivery-report test | Submission returned +CMGS: 49 and recipient confirmed arrival, but no carrier report was received. |
-| Printing | Final V0.32 enclosure assembly passed; V2 peg reprint and fit verification pending. |
+| Printing | Final enclosure assembly passed; Replacement peg reprint and fit verification pending. |
 
 Remaining work:
 
