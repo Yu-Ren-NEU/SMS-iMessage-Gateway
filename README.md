@@ -1,4 +1,4 @@
-# SIM7600 ↔ iMessage Bridge
+# SMS ↔ iMessage Gateway
 
 Use a physical SIM card through iMessage on a Mac: incoming SMS is forwarded to your iPhone, and commands from an authorized iMessage address send SMS through the SIM7600. The project includes a three-piece desktop enclosure and interchangeable figurines.
 
@@ -65,39 +65,81 @@ On the tested **older board**, disconnect power, then connect **PWR to GND on th
 
 **Revision-specific:** newer boards use a separate automatic-start arrangement documented as **PWR–3V3**. Follow the markings and Wiki for your actual revision. Do not interchange the two arrangements. An unpowered cellular module cannot be started simply by sending an AT command to make NET blink.
 
-## SMS sequence diagram
+## SMS sequence diagrams
+
+### Incoming SMS to iMessage
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Phone as External phone
-    participant Modem as SIM7600 / SIM
+    participant Modem as SIM7600
     participant RX as Receive process
-    participant Messages as Mac Messages / chat.db
-    participant iPhone as Authorized iMessage user
-    participant TX as Send process
-    Phone->>Modem: SMS or multipart SMS
-    RX->>Modem: Lock serial port; read SM PDUs
-    Modem-->>RX: Fragments and sender metadata
-    RX->>RX: Reassemble within one hour; deduplicate
-    RX->>RX: Commit complete SMS to durable SQLite queue
-    RX->>Modem: Delete persisted fragments; retry cleanup if needed
-    RX->>Messages: Submit queued iMessage using AppleScript
-    Messages-->>iPhone: Original sender and message body
-    RX->>Messages: Observe matching GUID and delivery state
-    RX->>RX: Record submitted / delivered; retain local copy
-    iPhone->>Messages: #sms +countrycodeNumber message
-    TX->>Messages: Read-only polling; reopen Messages if needed
-    TX->>TX: Check source allowlist; persist command progress
-    TX->>Modem: Lock port; submit PDUs requesting status reports
-    Modem-->>TX: Submission reference / error / uncertain result
-    TX->>Messages: Submission notice; do not resend uncertain SMS
-    Messages-->>iPhone: Submission status
-    Modem-->>RX: Carrier status report, if available
-    RX->>RX: Persist report; match recipient, reference, timestamp
-    TX->>Messages: Delivered / failed / no complete report in 24 hours
-    Messages-->>iPhone: Delivery status, not a read receipt
+    participant Store as Local SQLite queue
+    participant Messages as Mac Messages
+    participant iPhone as iPhone
+    Phone->>Modem: Send SMS fragments
+    RX->>Modem: Lock serial port and read SIM storage
+    Modem-->>RX: PDUs and current storage indices
+    RX->>RX: Reassemble and deduplicate
+    alt Incomplete multipart message
+        Note over RX,Modem: Keep incomplete fragments for a later scan
+    else Complete new message
+        RX->>Store: Commit message and fragment digests
+        Store-->>RX: Durable commit succeeds
+        RX->>Modem: Delete persisted fragments
+        Note over RX,Modem: Retry failed cleanup using digests and current indices
+        RX->>Messages: Submit iMessage via AppleScript
+        Messages-->>iPhone: Forward original sender and body
+        RX->>Messages: Read matching GUID and delivery fields
+        RX->>Store: Record submitted or observed delivered
+        Note over RX,Store: Keep the local record even after delivery
+    end
 ```
+
+The SIM is cleared only after the complete message is committed locally. iMessage submission and delivery are separate states. Uncertain sends are checked against the Messages database before any retry.
+
+### iMessage command to outgoing SMS
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant iPhone as Authorized iPhone
+    participant Messages as Mac Messages
+    participant TX as Send process
+    participant Modem as SIM7600
+    participant RX as Receive process
+    participant Store as Local SQLite tracking
+    iPhone->>Messages: Send #sms command to Mac address
+    TX->>Messages: Poll chat.db with read-only access
+    TX->>TX: Validate allowlist and persist command progress
+    TX->>Store: Record outgoing command and segment attempts
+    TX->>Modem: Lock port and submit PDUs requesting reports
+    Modem-->>TX: Return submission reference or error
+    TX->>Store: Save confirmed segment references
+    TX->>Messages: Send submitted or unconfirmed notice
+    Messages-->>iPhone: Show submission result
+    opt Carrier provides a status report
+        RX->>Modem: Poll SR storage under serial lock
+        Modem-->>RX: Return status report PDUs
+        RX->>Store: Persist and match recipient, reference and time
+        RX->>Modem: Delete archived report
+    end
+    TX->>Store: Check status of all SMS segments
+    alt All segments report delivered
+        TX->>Messages: Notify delivered
+    else A segment reports permanent failure
+        TX->>Messages: Notify delivery failure
+    else Report storage is unsupported
+        TX->>Messages: Notify that delivery tracking is unavailable
+    else No complete report within 24 hours
+        TX->>Messages: Notify unconfirmed, not failed
+    end
+    Messages-->>iPhone: Show available delivery status
+    Note over TX,iPhone: Delivery is not a read receipt
+```
+
+Carrier reports are optional and have not been received in this setup's live test. While waiting within the 24-hour window, no final delivery notice is sent. Late successful reports can update an earlier unconfirmed result.
 
 Incoming SMS is polled about every five seconds; commands about every three seconds. Network conditions, Messages responsiveness, and Mac sleep affect latency. Multipart grouping uses sender, reference, total segment count, and a one-hour window; timestamps need not match exactly. Incomplete messages remain on the SIM. Complete messages are persisted before SIM cleanup, independently of iMessage availability.
 
