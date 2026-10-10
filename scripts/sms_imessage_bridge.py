@@ -14,6 +14,8 @@ import sys
 import termios
 import time
 from pathlib import Path
+from delivery_store import connect as delivery_db, enqueue, decode_report, record_report
+from imessage_delivery import process_queue
 
 
 BASE = Path(os.environ.get("SIM7600_BRIDGE_HOME", str(Path.home() / "Library/Application Support/SIM7600Bridge")))
@@ -311,32 +313,78 @@ def update_health(state, issue):
 
 def save(state):
     temporary = STATE.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    with temporary.open("w", encoding="utf-8") as file:
+        json.dump(state, file, ensure_ascii=False, indent=2)
+        file.flush()
+        os.fsync(file.fileno())
     os.replace(temporary, STATE)
+
+
+def cleanup_persisted(modem, queue, messages):
+    persisted = {digest for row in queue.execute('SELECT payload FROM incoming')
+                 for digest in json.loads(row['payload'])['parts']}
+    for part in messages:
+        if part['digest'] in persisted:
+            modem.command(f'AT+CMGD={part["index"]}')
+
+
+def collect_reports(modem, db):
+    """Archive reports before deleting, preserving unmatchable reports locally."""
+    try:
+        modem.command('AT+CPMS="SR"')
+        answer = modem.command('AT+CMGL=4', 8)
+        for index, raw in re.findall(r'\+CMGL:\s*(\d+),[^\r\n]*\r\n([0-9A-Fa-f]+)', answer):
+            try:
+                report = decode_report(raw)
+                if report is not None:
+                    record_report(db, report)
+                    modem.command(f'AT+CMGD={int(index)}')
+            except (ValueError, IndexError) as error:
+                log(f"Invalid status report retained: {type(error).__name__}")
+    finally:
+        modem.command('AT+CPMS="SM","SM","SM"')
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--delivery-status", action="store_true", help="Show queue counts without message contents")
     args = parser.parse_args()
     BASE.mkdir(parents=True, exist_ok=True)
     if not DESTINATION:
         raise SystemExit("Set forward_to in bridge_config.json before starting")
+    if args.delivery_status:
+        db = delivery_db(BASE)
+        print('Incoming queue:', dict(db.execute('SELECT status,COUNT(*) FROM incoming GROUP BY status')))
+        print('Outgoing tracked:', db.execute('SELECT COUNT(*) FROM outgoing').fetchone()[0])
+        print('Archived reports:', db.execute('SELECT COUNT(*) FROM reports').fetchone()[0])
+        return
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {"seen": [], "archive": []}
     first_run = not STATE.exists()
     seen = set(state["seen"])
     next_health_check = 0
+    next_report_check = 0
+    queue = delivery_db(BASE)
     while True:
         try:
             with Modem() as modem:
                 modem.command("AT")
                 modem.command("AT+CMGF=0")
                 modem.command('AT+CPMS="SM","SM","SM"')
+                if not args.dry_run and time.monotonic() >= next_report_check:
+                    try:
+                        modem.command('AT+CNMI=2,1,0,2,0')
+                        collect_reports(modem, queue)
+                        next_report_check = time.monotonic() + 30
+                    except RuntimeError as error:
+                        log(f"Stored SMS reports unavailable: {error}")
+                        next_report_check = time.monotonic() + 1800
                 if time.monotonic() >= next_health_check:
                     update_health(state, modem_health(modem))
                     next_health_check = time.monotonic() + 60
-                found = list(groups(inbox(modem)))
+                current_messages = inbox(modem)
+                found = list(groups(current_messages))
                 if first_run:
                     seen.update(signature for signature, _, _ in found)
                     state["seen"] = sorted(seen)
@@ -345,27 +393,35 @@ def main():
                     first_run = False
                 else:
                     for signature, parts, body in found:
-                        if signature in seen:
-                            continue
+                        queued = queue.execute('SELECT 1 FROM incoming WHERE signature=?', (signature,)).fetchone()
+                        if signature in seen and not queued:
+                            continue  # Preserve historical first-scan semantics.
                         sender = parts[0]["sender"]
-                        message = f"SIM7600 收到短信\n发件人：{sender}\n内容：{body}"
                         if args.dry_run:
                             log(f"DRY RUN from {sender}: {body!r}")
                             continue
-                        send_imessage(message)
-                        seen.add(signature)
-                        state["seen"] = sorted(seen)
-                        state["archive"].append({"sender": sender, "body": body, "parts": [p["digest"] for p in parts], "forwarded_at": time.strftime("%Y-%m-%d %H:%M:%S")})
-                        save(state)
-                        log(f"Forwarded SMS from {sender} to {DESTINATION}")
-                        for part in parts:
-                            modem.command(f'AT+CMGD={part["index"]}')
+                        # FULL-synchronous SQLite commit MUST precede SIM deletion.
+                        enqueue(queue, signature, sender, body, parts, DESTINATION)
+                        if signature not in seen:
+                            seen.add(signature)
+                            state["seen"] = sorted(seen)
+                            state["archive"].append({"sender": sender, "body": body,
+                                "parts": [p["digest"] for p in parts], "queued_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+                            save(state)
+                    if not args.dry_run:
+                        # A previous pass may have deleted only some multipart
+                        # segments. Cleanup uses durable digests, not regrouping.
+                        cleanup_persisted(modem, queue, current_messages)
+            if not args.dry_run:
+                process_queue(queue, BASE, send_imessage, log)
             if args.once:
                 break
         except Exception as error:
             log(f"ERROR: {error}")
             issue = "iMessage 转发失败" if isinstance(error, IMessageSendError) else "串口或模块通信失败"
             update_health(state, issue)
+            if not args.dry_run:
+                process_queue(queue, BASE, send_imessage, log)
             if args.once:
                 raise
         time.sleep(5)

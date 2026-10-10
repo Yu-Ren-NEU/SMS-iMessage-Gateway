@@ -11,3 +11,8 @@ serial.lock
 messages_last_restart
 decode_attributed
 *.zip
+
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+backup-delivery-*/

@@ -6,6 +6,7 @@ It refuses to start until an allowed iMessage sender is configured.
 """
 
 import argparse
+import os
 import json
 import plistlib
 import random
@@ -16,6 +17,7 @@ import sys
 import time
 from pathlib import Path
 
+from delivery_store import connect as delivery_db, delivery_state
 from sms_imessage_bridge import BASE, Modem, send_imessage
 
 
@@ -82,31 +84,61 @@ def pdus(number, body):
     for position, part in enumerate(parts, 1):
         udh = bytes([5, 0, 3, reference, len(parts), position]) if len(parts) > 1 else b""
         content = udh + part.encode("utf-16-be")
-        tpdu = bytes([0x51 if udh else 0x11, 0, len(number) - 1, 0x91])
+        tpdu = bytes([0x71 if udh else 0x31, 0, len(number) - 1, 0x91])
         tpdu += bytes.fromhex(semi_octets(number))
         tpdu += bytes([0, 8, 0xAA, len(content)]) + content
         result.append((len(tpdu), "00" + tpdu.hex().upper()))
     return result
 
 
-def send_sms(number, body):
+def send_sms(number, body, command_id=None, ack_to=""):
+    tracking = delivery_db(BASE) if command_id is not None else None
+    try:
+        return _send_sms_tracked(number, body, command_id, ack_to, tracking)
+    finally:
+        if tracking:
+            tracking.close()
+
+
+def _send_sms_tracked(number, body, command_id, ack_to, tracking):
     receipts = []
     with Modem() as modem:
         modem.command("AT")
         modem.command("AT+CMGF=0")
-        for length, pdu in pdus(number, body):
+        capability = True
+        try:
+            modem.command('AT+CNMI=2,1,0,2,0')
+            modem.command('AT+CPMS="SR"')
+        except RuntimeError:
+            capability = False
+        finally:
+            modem.command('AT+CPMS="SM","SM","SM"')
+        segments = pdus(number, body)
+        if tracking:
+            with tracking:
+                tracking.execute('INSERT INTO outgoing(command_id,number,ack_to,created,total,capability) VALUES(?,?,?,?,?,?)',
+                    (command_id, number, ack_to, time.time(), len(segments), int(capability)))
+        for position, (length, pdu) in enumerate(segments, 1):
             import os
 
             os.write(modem.fd, f"AT+CMGS={length}\r".encode())
             prompt = modem.read(5)
             if ">" not in prompt:
                 raise RuntimeError(f"No SMS prompt: {prompt.strip()}")
+            if tracking:
+                with tracking:
+                    tracking.execute('INSERT INTO segments(command_id,part,started) VALUES(?,?,?)',
+                                     (command_id, position, time.time()))
             os.write(modem.fd, pdu.encode() + b"\x1a")
             answer = modem.read(45)
             match = re.search(r"\+CMGS:\s*(\d+)", answer)
             if not match or "\r\nOK\r\n" not in answer:
                 raise RuntimeError(f"SMS send status uncertain: {answer.strip()}")
             receipts.append(match.group(1))
+            if tracking:
+                with tracking:
+                    tracking.execute('UPDATE segments SET mr=? WHERE command_id=? AND part=?',
+                                     (int(match.group(1)), command_id, position))
     return receipts
 
 
@@ -128,7 +160,10 @@ def ensure_messages_running():
 
 def save(state):
     temporary = STATE.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    with temporary.open("w", encoding="utf-8") as file:
+        json.dump(state, file, ensure_ascii=False, indent=2)
+        file.flush()
+        os.fsync(file.fileno())
     temporary.replace(STATE)
 
 
@@ -158,6 +193,25 @@ def failure_reason(error):
     if isinstance(error, (OSError, TimeoutError)):
         return "串口或模块无响应"
     return "模块未返回明确结果"
+
+
+def notify_delivery(db):
+    labels = {'delivered': '已送达（运营商报告；不代表已读）',
+              'failed': '送达失败（运营商报告）',
+              'unsupported': '本模块暂无法读取送达报告；仍需对方确认',
+              'unconfirmed': '24 小时内未收到完整送达报告；不等于发送失败'}
+    for command in db.execute("SELECT * FROM outgoing WHERE COALESCE(notified,'') NOT IN ('delivered','failed')").fetchall():
+        status = delivery_state(db, command)
+        if status == 'waiting' or command['notified'] == status:
+            continue
+        # Late reports can upgrade a previous timeout notification to delivered.
+        try:
+            send_imessage(f"SIM7600：发往 {command['number']} 的短信：{labels[status]}。", command['ack_to'])
+        except Exception as error:
+            print(f"Delivery notification deferred: {type(error).__name__}", flush=True)
+            continue
+        with db:
+            db.execute('UPDATE outgoing SET notified=? WHERE command_id=?', (status, command['command_id']))
 
 
 def main():
@@ -206,6 +260,7 @@ def main():
     state = json.loads(STATE.read_text()) if STATE.exists() else {"last_id": database.execute("SELECT COALESCE(MAX(ROWID),0) FROM message").fetchone()[0], "results": []}
     save(state)
     next_app_check = 0
+    tracking = delivery_db(BASE)
     while True:
         if time.monotonic() >= next_app_check:
             try:
@@ -214,6 +269,7 @@ def main():
                 print(f"Could not reopen Messages: {error}", file=sys.stderr, flush=True)
             next_app_check = time.monotonic() + 30
         deliver_pending_acks(state)
+        notify_delivery(tracking)
         rows = database.execute("""SELECT m.ROWID, m.text, m.attributedBody, m.is_from_me, h.id, m.service
           FROM message m LEFT JOIN handle h ON h.ROWID=m.handle_id
           WHERE m.ROWID>? ORDER BY m.ROWID""", (state["last_id"],)).fetchall()
@@ -234,9 +290,9 @@ def main():
                 continue
             number, body = command
             try:
-                receipts = send_sms(number, body)
+                receipts = send_sms(number, body, rowid, sender)
                 outcome = {"id": rowid, "number": number, "status": "sent", "receipts": receipts}
-                acknowledgement = f"SIM7600：已提交短信至 {number}（模块回执 {', '.join(receipts)}；不代表对方已收到）。"
+                acknowledgement = f"SIM7600：已提交短信至 {number}（模块回执 {', '.join(receipts)}；正在等待送达报告）。"
             except Exception as error:
                 outcome = {"id": rowid, "number": number, "status": "error", "error": str(error)}
                 acknowledgement = f"SIM7600：发往 {number} 的短信未能确认提交（{failure_reason(error)}）。为避免重复，不会自动重发。"

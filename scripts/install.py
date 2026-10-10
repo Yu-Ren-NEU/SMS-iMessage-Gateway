@@ -10,7 +10,7 @@ JOBS={'receive':'sms_imessage_bridge.py','send':'imessage_sms_sender.py'}
 p=argparse.ArgumentParser();p.add_argument('--start',action='store_true');args=p.parse_args()
 if sys.platform!='darwin':raise SystemExit('This bridge requires macOS.')
 BASE.mkdir(parents=True,exist_ok=True);AGENTS.mkdir(parents=True,exist_ok=True)
-for name in ['sms_imessage_bridge.py','imessage_sms_sender.py','decode_attributed.m']:
+for name in ['sms_imessage_bridge.py','imessage_sms_sender.py','decode_attributed.m','delivery_store.py','imessage_delivery.py']:
  shutil.copy2(SOURCE/name,BASE/name)
 for name in ['bridge_config','sender_config']:
  target=BASE/(name+'.json')
