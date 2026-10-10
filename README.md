@@ -1,254 +1,237 @@
 # SIM7600 ↔ iMessage Bridge
 
-把一张实体 SIM 卡变成可通过 iMessage 使用的短信入口：SIM7600 收到的短信转发到 iPhone；从授权的 iMessage 地址发送 `#短信 +国家区号手机号 正文`，再由模块里的 SIM 卡发出短信。项目还包含配套的三件式桌面外壳和四种可替换小摆件。
+Use a physical SIM card through iMessage on a Mac: incoming SMS is forwarded to your iPhone, and commands from an authorized iMessage address send SMS through the SIM7600. The project includes a three-piece desktop enclosure and interchangeable figurines.
 
-本项目在 **macOS + 微雪 Waveshare SIM7600X 4G HAT + SIMCom SIM7600CE-T** 上实测。`SIM7600X 4G HAT` 是载板名称，金属模块上的 `SIM7600CE-T` 才是具体蜂窝模块型号；不同 SIM7600 型号、板卡修订和运营商的兼容性不能直接类推。
+Tested hardware: **Waveshare SIM7600X 4G HAT with a SIMCom SIM7600CE-T module**. The HAT name identifies the carrier board; the label on the metal module identifies the cellular variant. Compatibility does not automatically extend to other variants, revisions, carriers, or plans.
 
-## 项目目录
+## Repository layout
 
 ```text
-scripts/                    短信双向桥接、示例配置、安装工具、测试
+scripts/                    Bridge, example configuration, installers, tests
 3d-printing/
-  enclosure/                最终 V0.32 外壳：STL、STEP、参数、CAD 源码、预览
-  plugins/                  原机器人 + 宇航员/方头猫/复古电视 STL、源码、预览
+  enclosure/                V0.32 enclosure: STL, STEP, parameters, CAD, preview
+  plugins/                  Original robot and three replacement figurines
 ```
 
-软件仅使用 Python 标准库；反向读取 iMessage 富文本另需一个 Foundation 小工具，安装时从源码编译。3D 打印文件可以直接交给打印店，无需安装 CAD 环境。
+The bridge uses the Python standard library. A small Foundation helper decodes iMessage attributed text and is compiled during installation. Print-ready STL files do not require a CAD environment.
 
-## 硬件、固件和运营商
+## Hardware and firmware
 
-- SIM7600CE-T / SIM7600X 4G HAT、可用的 SIM 卡、MAIN 天线、可靠的 USB 电源及数据线。
-- 使用板上 **USB TO UART** 接 Mac；旧版板的两枚 UART 选择跳线设在 **C**，让 CP2102 与 SIM7600 通信。先确认对应修订的官方接法。
-- 串口默认 `/dev/cu.usbserial-0001`、115200 波特率，实际设备名通过 `ls /dev/cu.*` 查看；在配置中修改。
-- 中国电信卡在本机固件更新后已经实测短信和电话；移动卡也做过短信测试。这是本机测试结果，不保证所有卡、套餐、地区或模块固件均兼容。
-- 需要电话功能时，SIM 卡、运营商和模块固件需共同支持所用语音方案/VoLTE。收到 `+CMGS` 只表示模块明确提交了短信，不代表对方已经收到。
-- 第三方 Windows 驱动、烧录工具和微雪提供的固件 **不在仓库内分发**。应向微雪确认匹配具体模块的版本，不要把不同后缀型号的固件混刷。本机升级包与升级前后检查清单记录的目标版本为 **LE11B14SIM7600M22**，用户已确认按支持人员要求升级并完成电信测试；该版本不是对所有型号的通用升级建议。
+- SIM7600CE-T / SIM7600X 4G HAT, an active SIM, a MAIN antenna, and reliable USB power and data cables.
+- Connect the Mac to **USB TO UART**. On the tested older board, both UART jumpers are at **C**, connecting the CP2102 to the module. Confirm the instructions for your revision.
+- Default serial port: `/dev/cu.usbserial-0001`, at 115200 baud. Run `ls /dev/cu.*` and update the configuration for your device.
+- China Telecom SMS and voice calls worked after the firmware upgrade; China Mobile SMS was also tested. These are results from this setup, not a universal compatibility guarantee.
+- Voice/VoLTE requires compatible module firmware, SIM provisioning, and carrier service. `+CMGS` confirms submission, not delivery.
+- Firmware, Windows drivers, and flashing tools are **not redistributed**. Ask Waveshare for firmware matching the exact module variant.
 
-[微雪对应模块 Wiki](https://www.waveshare.com/wiki/SIM7600CE-T_4G_HAT) · [系列 HAT 官方说明](https://www.waveshare.com/wiki/SIM7600X_4G_%26_LTE_Cat-1_HAT)
+[Module Wiki](https://www.waveshare.com/wiki/SIM7600CE-T_4G_HAT) · [HAT family documentation](https://www.waveshare.com/wiki/SIM7600X_4G_%26_LTE_Cat-1_HAT)
 
-### 版本与复现环境
+### Recorded versions
 
-| 项目 | 已确认记录 |
+| Item | Evidence |
 |---|---|
-| 载板与模块 | Waveshare SIM7600X 4G HAT，SIMCom SIM7600CE-T；旧布局，右侧单排针标有 PWR、GND，UART 跳线设 C，VCCIO 设 3.3 V。未找到可确认的 PCB 修订编号。 |
-| 固件 | 升级资料记录从 LE11B11SIM7600M22 / B11V02 升至 LE11B14SIM7600M22。升级包与用户升级确认可追溯；未保留公开的升级后 AT+CGMR 原始读回，部署时仍需核对。 |
-| 文档整理与离线验证主机 | 2026-10-10：macOS 27.0.1（26A434）、arm64、Python 3.9.6。这是当前主机记录，不代表所有历史实测都使用相同系统版本。 |
-| 升级方式 | Windows + QDL V1.41，9x07 平台；烧录使用模块原生 USB，日常桥接使用 USB TO UART，两者不要混淆。 |
+| Board | Older SIM7600X 4G HAT layout: right-hand header labeled PWR and GND, UART jumpers at C, VCCIO at 3.3 V. Exact PCB revision is unrecorded. |
+| Firmware | Upgrade records specify LE11B11SIM7600M22 / B11V02 → **LE11B14SIM7600M22**. The owner confirmed the upgrade and carrier tests. A public post-upgrade AT+CGMR transcript has not been retained. |
+| Documentation/test host | 2026-10-10: macOS 27.0.1 (26A434), arm64, Python 3.9.6. Earlier tests may have used different OS versions. |
+| Flashing | Windows, QDL V1.41, 9x07 platform. Flash through native **USB**, rather than the **USB TO UART** used by the bridge. |
 
-本地留存的 `LE11B14SIM7600M22.zip` SHA-256：
+SHA-256 of the locally retained `LE11B14SIM7600M22.zip`:
 
 ```text
 a663f006706197a40818df4507aa27b6c28d2c0ebd72764efd5f58e6dced40eb
 ```
 
-校验值用于识别本项目留存的升级包，不代表厂家签名或兼容性认证。固件应向微雪支持索取并确认适配，不随仓库发布。
+This identifies the retained archive; it is not a manufacturer signature or certification. Obtain compatible firmware from Waveshare support.
 
-检查实际固件和网络时，先停用两个桥接进程，释放串口，再用串口工具逐条执行以下只读命令；核对后关闭工具并恢复服务：
+Stop both bridge processes before using a serial terminal. Send only the commands below, without the comments; close the terminal before restarting the bridge.
 
 ```text
 AT
-AT+CGMR       // 预期包含 LE11B14SIM7600M22
-AT+CSUB       // 记录子版本
-AT+CPIN?      // 预期 READY
-AT+CEREG?     // 已注册通常为 1 或 5
-AT+CPSI?      // 记录实际网络制式和状态
-AT+CSQ        // 信号读数
-AT+CSCA?      // 读取短信中心号码
-AT+CPMS?      // 读取存储使用量
+AT+CGMR       // Expect LE11B14SIM7600M22 on this setup
+AT+CSUB       // Record the sub-version
+AT+CPIN?      // Expect READY
+AT+CEREG?     // Registration usually reports 1 or 5
+AT+CPSI?      // Network technology and state
+AT+CSQ        // Signal quality
+AT+CSCA?      // SMS service center
+AT+CPMS?      // Storage usage
 ```
 
-`//` 后是说明，串口只发送命令本身。不要根据别人的卡直接覆盖短信中心号码，也不要把查询输出中的个人信息公开。
+Do not overwrite your SIM's service-center settings with another user's values. Redact personal identifiers before sharing diagnostics.
 
-### 通电后自动启动模块
+### Automatic startup after power connection
 
-我们实测的旧版载板：**断电后，用一根 2.54 mm 母对母杜邦线连接右侧排针上的 PWR 与 GND**。重新接电后，模块自行启动，等待约十几秒 NET 灯闪烁，免去每次短按 PWRKEY。PWR 是控制针脚；PWR 灯常亮本身不能证明蜂窝模块已经启动。不要误接相邻 5V，也不要挪动 VCCIO 电平跳线。
+On the tested **older board**, disconnect power, then connect **PWR to GND on the right-hand header using one 2.54 mm female-to-female jumper wire**. On reconnecting power, the module starts without pressing PWRKEY; the NET LED begins blinking after roughly a dozen seconds. The PWR LED alone only confirms board power. Do not connect to the adjacent 5V pins or move the VCCIO jumper.
 
-**这不是所有修订通用的接法。**微雪新版有独立自动上电配置，官方要求 PWR–3V3；必须按实物标识和对应 Wiki 判断。旧版与新版不要混用。NET 灯反映模块/网络状态，无法在尚未启动的模块上通过 AT 指令直接让它闪烁。
+**Revision-specific:** newer boards use a separate automatic-start arrangement documented as **PWR–3V3**. Follow the markings and Wiki for your actual revision. Do not interchange the two arrangements. An unpowered cellular module cannot be started simply by sending an AT command to make NET blink.
 
-## 短信收发时序
+## SMS sequence diagram
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Phone as 外部手机
-    participant Modem as SIM7600 / SIM 卡
-    participant RX as 接收转发进程
-    participant Messages as Mac 信息 / chat.db
-    participant iPhone as 授权 iMessage 用户
-    participant TX as 指令发送进程
-    Phone->>Modem: 普通短信或长短信分段
-    RX->>Modem: 串口加锁；读取 SM 存储（PDU）
-    Modem-->>RX: 分段与发件人信息
-    RX->>RX: 按引用编号拼合；一小时窗口；查重
-    RX->>RX: 完整短信提交至本地 SQLite 持久化队列
-    RX->>Modem: 清理已落盘的分段；删除失败下轮重试
-    RX->>Messages: AppleScript 提交队列中的 iMessage
-    Messages-->>iPhone: 原短信发件人 + 正文
-    RX->>Messages: 只读核对消息 GUID / 送达状态
-    RX->>RX: 标记已提交或已送达；保留本地记录
-    iPhone->>Messages: #短信 +国家区号手机号 正文
-    TX->>Messages: 只读轮询 chat.db；必要时打开信息
-    TX->>TX: 核对允许的来源地址；记录指令进度
-    TX->>Modem: 串口加锁；UCS-2 PDU 请求送达报告；AT+CMGS
-    Modem-->>TX: 提交回执 / 错误 / 结果不确定
-    TX->>Messages: 返回状态；不确定时不自动重发
-    Messages-->>iPhone: 短信提交状态
-    Modem-->>RX: 运营商 SMS-STATUS-REPORT（若支持）
-    RX->>RX: 持久化报告；匹配号码、模块编号和时间
-    TX->>Messages: 全部分段送达 / 永久失败 / 24 小时未获完整报告
-    Messages-->>iPhone: 送达状态（不代表已读）
+    participant Phone as External phone
+    participant Modem as SIM7600 / SIM
+    participant RX as Receive process
+    participant Messages as Mac Messages / chat.db
+    participant iPhone as Authorized iMessage user
+    participant TX as Send process
+    Phone->>Modem: SMS or multipart SMS
+    RX->>Modem: Lock serial port; read SM PDUs
+    Modem-->>RX: Fragments and sender metadata
+    RX->>RX: Reassemble within one hour; deduplicate
+    RX->>RX: Commit complete SMS to durable SQLite queue
+    RX->>Modem: Delete persisted fragments; retry cleanup if needed
+    RX->>Messages: Submit queued iMessage using AppleScript
+    Messages-->>iPhone: Original sender and message body
+    RX->>Messages: Observe matching GUID and delivery state
+    RX->>RX: Record submitted / delivered; retain local copy
+    iPhone->>Messages: #sms +countrycodeNumber message
+    TX->>Messages: Read-only polling; reopen Messages if needed
+    TX->>TX: Check source allowlist; persist command progress
+    TX->>Modem: Lock port; submit PDUs requesting status reports
+    Modem-->>TX: Submission reference / error / uncertain result
+    TX->>Messages: Submission notice; do not resend uncertain SMS
+    Messages-->>iPhone: Submission status
+    Modem-->>RX: Carrier status report, if available
+    RX->>RX: Persist report; match recipient, reference, timestamp
+    TX->>Messages: Delivered / failed / no complete report in 24 hours
+    Messages-->>iPhone: Delivery status, not a read receipt
 ```
 
-接收端约每 5 秒轮询；反向指令约每 3 秒轮询。正常情况下时延较短，网络、信息应用响应及 Mac 休眠可能影响时延。长短信的每段时间可能不同：修复后的逻辑以发件人、分段引用和总段数匹配，并限制在一小时内；不齐的分段会保留等待，不会擅自删除。完整短信先落盘，才允许清理 SIM；清理不依赖 iMessage 当时是否可用。
+Incoming SMS is polled about every five seconds; commands about every three seconds. Network conditions, Messages responsiveness, and Mac sleep affect latency. Multipart grouping uses sender, reference, total segment count, and a one-hour window; timestamps need not match exactly. Incomplete messages remain on the SIM. Complete messages are persisted before SIM cleanup, independently of iMessage availability.
 
-## 安装和配置
+## Installation
 
-需要 macOS、Python 3.9+、已登录 iMessage 的“信息”应用及 Xcode Command Line Tools。若缺少编译器，先运行 `xcode-select --install`。建议使用固定路径的 Python；以后更换解释器，要同步更新 LaunchAgent 和隐私授权。
+Requirements: macOS, Python 3.9+, a signed-in iMessage account, and Xcode Command Line Tools. Install the tools with `xcode-select --install` if needed. Keep the interpreter at a stable path; changing it requires updating LaunchAgents and privacy permissions.
 
 ```sh
 python3 scripts/install.py
 ```
 
-在 `~/Library/Application Support/SIM7600Bridge/` 编辑两个配置：
+Edit these files in `~/Library/Application Support/SIM7600Bridge/`:
 
-`bridge_config.json`：
+**bridge_config.json**
 
 ```json
 {
   "serial_port": "/dev/cu.usbserial-0001",
-  "forward_to": "你的 iPhone iMessage 手机号或邮箱"
+  "forward_to": "YOUR_IPHONE_IMESSAGE_ADDRESS"
 }
 ```
 
-`sender_config.json`：
+**sender_config.json**
 
 ```json
 {
-  "allowed_senders": ["你发送指令时实际使用的 iMessage 手机号或邮箱"]
+  "allowed_senders": ["YOUR_COMMAND_SENDER_ADDRESS"]
 }
 ```
 
-Mac 可以用 Apple ID 邮箱接收指令，iPhone 可以用手机号接收转发，便于分开会话、减少自己给自己发消息产生的重复显示。Mac 的接收地址在“信息 → 设置 → iMessage”中配置；脚本配置的是**转发目标**和**允许的指令来源**，不是修改 Apple 账户设置。未配置来源名单时，反向发送程序拒绝运行。短信接收转发不会限制原短信发件人的号码。
+Use the Mac's Apple ID email for receiving commands and the iPhone's phone number for receiving forwarded messages if you want separate conversations. Configure device identities in Messages settings. The script settings control the forwarding destination and permitted command sources; they do not alter Apple account settings. An empty allowlist disables sending. Incoming SMS forwarding accepts all original SMS senders.
 
-### 必须开启的权限和系统条件
+### Permissions and operating conditions
 
-| 项目 | 用途与操作 |
+| Requirement | Purpose |
 |---|---|
-| 完全磁盘访问权限 | 反向进程只读 `~/Library/Messages/chat.db`。系统设置 → 隐私与安全性 → 完全磁盘访问权限，添加安装工具显示的实际 Python 解释器；手动测试的终端也可能需要授权。切换 Python 或后台运行方式后需重新检查。 |
-| 自动化 → 信息 | 允许负责运行脚本的 Python/终端通过 AppleScript 控制“信息”。首次测试发送时 macOS 会弹窗，批准控制信息；实际显示的主体依 macOS 和解释器安装方式不同。 |
-| iMessage 登录及联网 | Mac 需登录可用 iMessage 账户。“信息”窗口无需一直放在前台；程序会在关闭时重新打开应用，并在超时后尝试恢复。 |
-| 后台运行、登录、休眠 | LaunchAgent 是当前用户登录后的任务，不是在登录前启动的系统服务。Mac 需要保持运行和联网；深度休眠/关机期间不会桥接。保持供电并按需设置防止自动睡眠。 |
-| 串口可用 | 配置正确端口、可靠供电；不要让串口调试软件同时占用设备。两个桥接进程用同一锁文件串行操作。 |
+| Full Disk Access | Read-only access to `~/Library/Messages/chat.db` for commands and delivery observation. In System Settings → Privacy & Security → Full Disk Access, add the actual Python interpreter shown by the installer. A terminal used for manual checks may need its own authorization. |
+| Automation → Messages | Allow the responsible Python/terminal process to control Messages using AppleScript. Approve the first automation prompt. The displayed permission owner depends on the OS and interpreter. |
+| iMessage login and connectivity | Messages need not remain in the foreground. The bridge reopens it when closed and attempts recovery after timeouts. |
+| Logged-in, awake Mac | LaunchAgents run after user login, not before login. Sleep and shutdown suspend the bridge. Keep the Mac powered and connected. |
+| Available serial port | Use the correct device and stable power. Do not simultaneously open it in another terminal. Both bridge processes share a serial lock. |
 
-**不需要“辅助功能”或屏幕录制权限**；本项目不通过 UI 自动点击信息应用，也不修改信息数据库。
+Accessibility and screen-recording permissions are not required. The scripts do not click the UI or modify the Messages database.
 
-授权后验证数据库权限：
+Optional manual database check, under a permission-enabled terminal:
 
 ```sh
 python3 "$HOME/Library/Application Support/SIM7600Bridge/imessage_sms_sender.py" --check-access
 ```
 
-首次使用可先在两个终端分别运行接收、发送脚本，以触发权限请求并检查日志，再启用后台服务。迁移本项目已有安装时，应先停用旧 LaunchAgent，避免旧服务与新服务同时工作。不要删除原来的状态文件，否则会改变首次扫描/查重行为。
+Terminal permission failure does not necessarily mean the background LaunchAgent lacks permission; check the background logs separately. Start manually to trigger automation prompts, then enable both services:
 
 ```sh
 python3 scripts/install.py --start
 launchctl list | grep com.sim7600bridge
 ```
 
-安装工具创建 `com.sim7600bridge.receive` 和 `com.sim7600bridge.send` 两个用户 LaunchAgent，记录日志到应用数据目录。配置、状态、历史短信和日志留在本机，均被 `.gitignore` 排除。
+The installer creates `com.sim7600bridge.receive` and `com.sim7600bridge.send`. Logs, configuration, state, and message history stay in the local application directory and are excluded from Git. Stop any older installation before starting a second set of services. Preserve existing state during migration.
 
-### 日常使用
+### Usage and delivery status
 
-从允许的 iMessage 地址向 Mac 的 iMessage 接收地址发：
+Send from an allowlisted address to the Mac's iMessage address:
 
 ```text
-#短信 +国家区号手机号 这是一条测试短信
+#sms +15550000000 This is a test message
 ```
 
-目标号码必须是 `+` 开头的国际格式，正文 1–1000 字符。中文、英文及混合内容用 UCS-2 PDU，超长正文拆分发送，会产生多段短信费用。失败或提交不确定会返回状态；为了避免重复扣费，不自动重发不确定的短信。对方是否收到需对方确认。
+The destination must use international `+` format. Bodies contain 1–1000 characters. Unicode text uses UTF-16BE SMS PDUs; longer bodies are segmented and may incur multiple SMS charges. The original Chinese command keyword remains accepted for backward compatibility.
 
-接收端一分钟检查一次 SIM 就绪、LTE 注册、信号和短信槽位，连续异常后告警，同一异常约一小时提醒一次，恢复后通知。**不能直接确认欠费**，只能看到可能由欠费、覆盖、天线或运营商导致的网络异常。如果 iMessage 本身失败，异常告警也可能无法送达。
+- **Incoming queue:** `delivery.sqlite3` commits the complete SMS before SIM deletion. Cleanup retries use saved PDU digests and current indices, including partially deleted multipart messages. Keep this database and the original state files.
+- **iMessage:** the observer matches recipient, body, outgoing record, and GUID, then checks `date_delivered` / `is_delivered`. Accepted messages remain recorded while Messages handles offline recipients. Explicit failures can retry with backoff, at most eight attempts. Uncertain submissions are reconciled before retrying; unavailable permissions or ambiguous matches prevent blind resends.
+- **Outgoing SMS:** each PDU requests a carrier status report. `AT+CNMI=2,1,0,2,0` and `SR` storage retrieve reports. All segments must report successful delivery before a delivered notice. Permanent failure produces a failure notice. After 24 hours without complete reports, the notice says unconfirmed, not failed; late successful reports can update it. Ambiguous reference matches are not guessed.
+- **Health:** SIM readiness, network registration, signal, and SMS storage are checked about once a minute. Persistent anomalies produce alerts, roughly hourly while unresolved, followed by recovery notices. This cannot directly identify an unpaid balance. An iMessage outage can also prevent alerts from arriving.
 
-### 持久化队列与送达状态（新版本）
+Carrier reports have **not yet been observed on the tested Telecom setup**, although submission and recipient-confirmed arrival work. iMessage delivery observation has passed a live test. Delivered does not mean read. See the [SIM7600 AT manual](https://files.waveshare.com/upload/6/68/SIM7500_SIM7600_Series_AT_Command_Manual_V2.00.pdf) for report configuration and storage.
 
-- 接收：完整短信在 `delivery.sqlite3` 提交成功后才清理 SIM。分段摘要用于重试删除，避免复用旧槽位；缺段仍保留在 SIM 等待。SQLite 队列与既有状态必须保留，均不提交 Git。
-- iMessage：只读 Messages 数据库，匹配收件人、正文、发送记录和 GUID，观察 `date_delivered` / `is_delivered`。已提交但未获送达标记时保留记录，由“信息”应用处理离线接收；脚本不盲目重发。明确发送失败可退避重试，最多 8 次；超时后先核对数据库再决定。权限不足或匹配歧义时暂停不确定消息的重发。
-- 发短信：每个 PDU 请求送达报告；使用 `AT+CNMI=2,1,0,2,0` 和 `SR` 存储读取。所有分段的状态为成功才通知“已送达”；永久失败通知失败。24 小时没完整报告只通知“未收到完整报告”，晚到成功报告仍可更新。号码、模块编号和时间匹配不唯一时不猜测。
-- 当前版本的运营商报告与 Messages 字段需要实机测试，不能把离线测试写成真实送达验证。“已送达”也不代表已读。[模块 AT 手册](https://files.waveshare.com/upload/6/68/SIM7500_SIM7600_Series_AT_Command_Manual_V2.00.pdf) 说明了状态报告配置与存储。
-
-查看计数，不输出短信内容：
+Inspect counts without revealing message bodies:
 
 ```sh
 python3 "$HOME/Library/Application Support/SIM7600Bridge/sms_imessage_bridge.py" --delivery-status
 ```
 
-原项目的旧安装可运行以下命令升级，保留原两项 LaunchAgent、解释器、配置和短信状态，并先备份旧文件：
+`upgrade_existing.py` is a migration helper for the project's original installation and its original LaunchAgent labels; new installations should use `install.py`. It backs up files and retains configuration and state. It does not require Terminal to read Messages:
 
 ```sh
 python3 scripts/upgrade_existing.py
 ```
 
-升级器不会要求终端额外读取 Messages；后台发送进程用原运行身份检查访问权限。若后台日志显示 `authorization denied`，在完全磁盘访问权限中检查原 LaunchAgent 使用的 Python，重新授权并重启服务。升级前后不要同时运行旧、新两套服务。
+### First scan
 
-实机验收：发送一条短短信和一条长短信，核对已提交及送达报告；给 SIM 发短信，核对队列落盘、SIM 清理和 iMessage 到达；最后测试 iPhone 暂时离线后恢复联网的送达状态。发送可能产生运营商费用。
+With no existing receive-state file, the first scan marks complete messages already on the SIM as seen. It neither forwards nor automatically deletes that history. Back up before deliberately changing this behavior; deleting deduplication state is not a storage-cleanup method.
 
-## 3D 打印
+## 3D printing
 
-![最终外壳](3d-printing/enclosure/review.png)
-![可替换插件](3d-printing/plugins/review.png)
+![V0.32 enclosure](3d-printing/enclosure/review.png)
+![Replacement figurines](3d-printing/plugins/review.png)
 
-最终外壳是 V0.32：黑色 `base`、黑色 `lid-carrier`、石灰白色 `top-cover` 三件。顶部正方形盲孔 4.4×4.4 mm；原机器人插头 4×4 mm，在本机打印样件中偏松，新三款插件改为 4.2×4.2 mm、插入 1.65 mm、末端导入斜面，可每 90° 调整方向。宇航员、方头猫、复古电视为放大后的形象，眼口加深版本 V2；不需要重打顶盖。
+Print black `base`, black `lid-carrier`, and limestone-white `top-cover` in PETG. The owner confirmed the final enclosure fits well and remains stable in daily use; measured temperatures and final slicer settings are unrecorded.
 
-- 建议外壳使用 PETG，两个黑色部件与一个白色部件分别打印。用户确认最终外壳装配完美、日常运行稳定；尚未记录温度测量值。
-- 插件建议先试插，不要强压；打印机尺寸误差会影响紧度。新插件实物反馈插不进去，用户计划重新打印后复核；原因尚未确认，不直接归因于模型或打印。
-- STL 单位 mm；外壳 STEP 和参数用于继续改设计。外壳源代码的 Ben 刻字使用 macOS 系统 Apple Chancery 字体：仓库不分发字体；其他平台重新生成时需要选择合法可用字体，尺寸可能不同。
-- 有悬挑的小形象请让打印店检查支撑与摆放方式；安装柱与插头处不要随意缩放。仓库中的插件 STL 已检查封闭网格。
+The lid has a 4.4 × 4.4 mm square blind socket. The original robot's 4.0 mm peg was loose. The three V2 replacements use 4.2 × 4.2 mm pegs, 1.65 mm insertion length, and a lead-in chamfer, allowing four orientations. Their first physical print does **not** fit; a reprint is planned and the cause remains unconfirmed. Do not force the peg or scale the whole figurine to change fit. The lid need not be redesigned to test a reprint.
 
-## 验证记录、项目进度和待办
+STL units are millimeters; STEP and parameters support further editing. CAD regeneration requires CadQuery and an available, licensed font for the Ben engraving; the source uses macOS Apple Chancery, which is not redistributed. Ask the print shop to review orientation and supports. The distributed figurine meshes were cleaned and checked for watertightness.
 
-历史版本已验证：固件更新后的电信短信/拨号、移动短信、双向 iMessage 桥接、中文及英文发送回执、后台运行/信息关闭后的重启、状态通知、长短信拼合后清理存储、旧版 PWR–GND 自动上电。一次长短信修复实测把 38 个分段还原成 16 条短信，转发后存储从 38/40 降到 0/40。
+## Verification and remaining work
 
-外壳经过多次实物试装，解决接口、针脚净空、安装柱与顶盖装配问题；最终结构 CAD 为 V0.32。用户已确认最终外壳装配完美；新版插件插不进去，待重新打印复核。
-
-### 新版实机验收（2026-10-10）
-
-- 已部署原 Mac 的两个后台服务，保留现有配置与状态。
-- 用户确认请求送达报告的测试短信实际到达；模块返回 `+CMGS: 49`，但尚未收到运营商状态报告。因此不能声称运营商送达回执已验证。
-- “队列转发测试”已存入 SQLite、一次提交到 iMessage；观察到对应 GUID 和已送达状态。未将消息正文或实际号码纳入公开测试记录。
-- SIM 清理情况通过实时存储查询核对；iMessage 离线恢复、长短信全部分段报告和真实断电故障注入尚待测试。
-
-### 已完成与待验证的边界
-
-| 项目 | 结果与证据 |
+| Area | Evidence / status |
 |---|---|
-| 电信短信、拨号 | 固件更新后，用户确认 Windows 短信成功；Mac 测试电话接通、中文/英文短信到达。 |
-| 双向 iMessage | 用户确认接收转发和反向短信到达；发送状态及应用关闭后的恢复已有测试。 |
-| 长短信与存储 | 修复按每段精确时间分组的问题；一次实测 38 个分段拼成 16 条，转发清理后 0/40。缺段和删除失败重试仍有下述限制。 |
-| 自动上电 | 用户确认旧布局 PWR–GND 接线后可自动启动；不是新硬件修订的实测记录。 |
-| 离线软件检查 | 21 项协议、持久化队列和送达回归测试通过；Python 编译检查、Foundation 解码器编译通过。离线测试不代替真实运营商送达测试。 |
-| 外壳与插件 | 早期外壳已实物试装并多轮调整；最终 V0.32 装配用户确认通过；4.2 mm 插头 V2 实物插不进去，待重新打印复核。 |
+| Carrier SMS and voice | Telecom SMS and calls worked after upgrading; Mobile SMS also tested. |
+| Bidirectional bridge | Recipient-confirmed English/Chinese SMS, incoming iMessage forwarding, status notices, and reopening Messages tested. |
+| Multipart cleanup | Historical fix reconstructed 16 messages from 38 fragments and reduced storage from 38/40 to 0/40. |
+| Automatic startup | Owner confirmed older-board PWR–GND wiring restores module and SMS operation after reconnecting power. |
+| Daily operation | Owner reports stable long-term daily use; dedicated sleep/fault-injection coverage remains incomplete. |
+| Offline checks | 21 protocol, persistence, report-matching, and delivery-observation tests passed; Python and Foundation compilation checked. |
+| New live queue test, 2026-10-10 | Complete test SMS persisted; iMessage submitted once and matching GUID reported delivered; SIM storage checked at 0/40. |
+| Carrier delivery-report test | Submission returned +CMGS: 49 and recipient confirmed arrival, but no carrier report was received. |
+| Printing | Final V0.32 enclosure assembly passed; V2 peg reprint and fit verification pending. |
 
-尚缺/后续关键点：
+Remaining work:
 
-1. 补存升级后 AT+CGMR / AT+CSUB 原始版本读回、准确 PCB 修订编号；目前已有目标升级包与当前系统环境记录。板卡照片如后续加入，必须遮盖 IMEI、MEID、SN 和个人信息。
-2. 长短信引用重用/跨时区时间、缺失或格式损坏分段的更完整测试；不齐分段的过期处理目前没有自动清理策略，仍可能占满存储。
-3. 新版本加入 iMessage 本地送达观察及运营商报告，但仍待当前实机验证。缺权限、系统字段变化或报告缺失时保留未确认状态；不能承诺严格“恰好一次”或已读。
-4. 新版本按持久化短信分段摘要重试删除，已通过部分删除失败后的离线测试；真实断电中断未专门注入测试。
-5. 用户确认长期日常运行稳定、断电重连后模块自动启动且短信功能恢复；休眠唤醒和专门故障注入尚未完整测试。发送进程异常退出依赖 LaunchAgent 重启。
-6. 本地短信记录/状态文件尚无滚动保留策略；`--inspect` 会输出最近消息，仅用于本人调试，不要公开其输出。
-7. 4.2 mm 插头及三款放大摆件的实物松紧、PETG 打印细节、重心和支撑验证。
-8. 富文本解码器使用 macOS 尚可用但已弃用的 NSUnarchiver；当前编译通过，后续应针对系统升级验证兼容性及更安全的解码方案。
+1. Record post-upgrade AT+CGMR / AT+CSUB output and exact PCB revision. Redact IMEI, MEID, serial numbers, and personal identifiers from any future photographs.
+2. Broaden tests for reference reuse, time zones, malformed PDUs, and missing fragments. Incomplete fragments have no expiry policy and can still fill SIM storage.
+3. Validate carrier reports, multipart delivery reports, and iMessage offline-recipient recovery. Unsupported fields or absent reports remain unconfirmed; exactly-once delivery and read receipts are not promised.
+4. Inject real interruption during queue commit, serial transmission, and cleanup. Partial-delete retry is tested offline; physical interruption at these boundaries is not.
+5. Test serial reconnection and sleep/wake systematically. LaunchAgent restarts remain the recovery mechanism for a crashed process.
+6. Add retention policies for local history, queue, and logs. `--inspect` reveals recent messages and is for private troubleshooting only.
+7. Reprint the figurines; record fit, supports, detail quality, center of gravity, filament, and slicer settings.
+8. Replace or harden the deprecated NSUnarchiver helper and verify compatibility with future macOS versions.
 
-运行离线回归测试，不连接串口、不发送消息：
+Run offline tests without connecting to the module or sending messages:
 
 ```sh
 python3 -m unittest discover -s scripts/tests -v
 ```
 
-## 许可与第三方资源
+## License and third-party materials
 
-本项目自写脚本、CAD 源码与自设计模型采用 MIT License。Waveshare / SIMCom 文档、固件、驱动、Apple 系统字体及 macOS 组件保留各自权利；本仓库只链接第三方说明，不复制其固件包或字体。公开仓库不包含真实短信、电话/邮箱配置、IMEI、MEID、SN 或运行数据库。
-
-### 首次扫描的重要行为
-
-接收程序首次启动且没有状态文件时，会把卡内已有完整短信记录为“见过”，只转发后续新短信；这批历史短信也不会自动删除。若希望接管历史短信，需要先备份并按需求调整初始化逻辑。不要为了清理存储随便删查重状态文件。
+Original scripts, CAD source, and models are MIT licensed. Waveshare/SIMCom documents, firmware, drivers, Apple fonts, and macOS components retain their respective rights. This repository links to third-party documentation and does not distribute firmware or fonts. Real phone/email configuration, message history, device identifiers, and runtime databases are excluded.

@@ -21,7 +21,7 @@ class DeliveryTests(unittest.TestCase):
         self.db.close()
         self.temp.cleanup()
     def enqueue(self):
-        enqueue(self.db, 'sig', NUMBER, '测试', [{'digest':'a'}, {'digest':'b'}], NUMBER)
+        enqueue(self.db, 'sig', NUMBER, '\u6d4b\u8bd5', [{'digest':'a'}, {'digest':'b'}], NUMBER)
     def outgoing(self, total=1):
         with self.db:
             self.db.execute('INSERT INTO outgoing VALUES(1,?,?,100,?,1,NULL)', (NUMBER, NUMBER,total))
@@ -31,7 +31,7 @@ class DeliveryTests(unittest.TestCase):
     def test_queue_survives_restart_and_is_idempotent(self):
         self.enqueue(); self.enqueue(); self.db.close(); self.db=connect(self.base)
         row=self.db.execute('SELECT * FROM incoming').fetchone()
-        self.assertEqual(json.loads(row['payload'])['body'],'测试')
+        self.assertEqual(json.loads(row['payload'])['body'],'\u6d4b\u8bd5')
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM incoming').fetchone()[0],1)
     def test_partial_delete_retries_only_saved_digests_and_current_slots(self):
         self.enqueue()
@@ -112,7 +112,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertIsNone(decode_report('00000000'))
         with self.assertRaises(ValueError):decode_report('0002010B91')
     def test_requests_delivery_report_on_each_pdu(self):
-        for body in ('hello','测试'*100):
+        for body in ('hello','\u6d4b\u8bd5'*100):
             for _, raw in pdus(NUMBER,body):
                 self.assertTrue(bytes.fromhex(raw)[1]&0x20)
 
@@ -128,7 +128,7 @@ class MessageObservationTests(unittest.TestCase):
               CREATE TABLE handle(id); CREATE TABLE chat_message_join(message_id,chat_id);
               CREATE TABLE chat_handle_join(chat_id,handle_id);''')
             db.execute('INSERT INTO handle VALUES(?)',(NUMBER,))
-            body='SIM7600 收到短信\n发件人：x\n内容：hello'
+            body='SIM7600 received SMS\nFrom: x\nBody: hello'
             db.execute("INSERT INTO message VALUES(?,?,NULL,1,'iMessage',1,100,0,1)",('g',body))
             db.commit();db.close()
             def opened():

@@ -1,26 +1,20 @@
-# 可替换摆件
+# Interchangeable figurines
 
-- `robot-original.stl` / `.step`：原 V0.32 机器人，4.0 mm 方插柱，实物偏松。
-- `astronaut-plugin.stl`、`cat-plugin.stl`、`tv-plugin.stl`：新版三个形象 V2，4.2 mm 方插柱、插入 1.65 mm、末端 0.25 mm 导入倒角，适配现有 4.4 mm 方盲孔。
-- `review.png`：三个插件单体和装在现有外壳上的预览。
-- `generate_astronaut.py`、`generate_cat_tv.py`：CadQuery 源码。STL 单位为 mm，主体高约 24 mm，底座 21×18 mm。
+- `robot-original.stl` / `.step`: original V0.32 robot; its 4.0 mm square peg was loose in a physical sample.
+- `astronaut-plugin.stl`, `cat-plugin.stl`, `tv-plugin.stl`: V2 astronaut, square-headed cat, and retro television character. Each uses a 4.2 mm square peg, 1.65 mm insertion length, and a 0.25 mm lead-in chamfer for the existing 4.4 mm socket.
+- `review.png`: individual and assembled previews.
+- `generate_astronaut.py`, `generate_cat_tv.py`: CadQuery source. Units are millimeters; body height is approximately 24 mm and the base is 21 × 18 mm.
 
-交给打印店的是 STL。源代码、预览不需打印；无需重打盒子。最终网格经零面积面清理和封闭性检查。实物松紧仍待验证，不要硬压插柱。用不同机器打印时可先打印一个插件测试；不要整体缩放来调整插头，否则摆件也会改变。
+Send STL files to the print shop. Source and preview files need no printing. A new lid is not required. Distributed meshes were cleaned of zero-area faces and checked for watertightness.
 
-## 实物验收与打印记录
+## Fit status
 
-当前没有最终版本的切片工程、实测克重、耗材品牌或完整打印参数；不要将 CAD 配合尺寸当作打印后保证值。STL 按 100% 比例、mm 单位导入；支撑、层高和摆放由打印店按机器检查。外壳选黑色 PETG（base / lid-carrier）和石灰白 PETG（top-cover），插件颜色可另选。
+The first V2 prints do **not** fit; the owner plans a reprint. The cause is not established. Do not force the peg. Print one replacement first, check all four orientations, stability, and facial detail, then decide whether to print the others.
 
-| 验收项 | 应记录的结果 |
-|---|---|
-| 打印条件 | 机器、喷嘴、耗材、层高、壁圈、填充、方向、支撑及切片总重量（包含支撑） |
-| 配合 | 插柱/孔实际尺寸；徒手轻插能否就位，是否晃动、开裂，是否可拔出 |
-| 外壳 | 四柱支撑及盖子闭合、USB 插头/卡槽操作、天线锁紧；不得挤压 PCB 或针脚 |
-| 摆件 | 四个方向试插、重心稳定、眼口清晰；4.2 mm 插头尚待实测，不要强压 |
-| 使用后 | 连续运行的外壳温度、变形、插拔后的松紧变化 |
+The original 4.0 mm peg was loose; V2 increases it to 4.2 mm while retaining the 4.4 mm lid socket, giving 0.1 mm nominal clearance per side. Change only peg/socket geometry if adjustment is necessary, not whole-model scale or internal enclosure posts.
 
-先试一个插件和现有顶盖配合，再决定是否批量打印。调整松紧时仅改插头/孔参数，不要整体缩放，也不要改内部安装柱。已有实物反馈：原 4.0 mm 方插柱偏松；新 V2 增至 4.2 mm，顶盖孔保持 4.4 mm，名义单侧间隙 0.1 mm。
+## Printing and acceptance
 
-### 最新用户实物反馈
+Record printer, nozzle, filament, layer height, walls, infill, orientation, supports, and sliced weight including supports. These final settings and measured weights are currently unrecorded. Ask the shop to review overhangs and supports; nominal CAD dimensions cannot guarantee printed fit.
 
-最终外壳装配确认通过，日常长期运行稳定；断电重连后模块自动上电，短信功能恢复。新 4.2 mm 插头目前插不进去，计划重新打印复核；原因尚未确认。专门的温度测量和故障注入测试尚未记录。
+Check measured peg/socket sizes, gentle insertion and removal, cracking or looseness, stability in all four orientations, readable eyes/mouth, and changes after repeated use. Use the existing PETG enclosure; figurine color is optional. The final enclosure assembly and stable daily operation are owner-confirmed, but dedicated temperature measurements and fault-injection tests are unrecorded.

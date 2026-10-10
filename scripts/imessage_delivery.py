@@ -47,7 +47,7 @@ def observe(item, payload, base):
                (cutoff, payload['recipient'], payload['recipient'])).fetchall()
         if len(rows) >= 1000:
             return 'ambiguous', None
-        expected = f"SIM7600 收到短信\n发件人：{payload['sender']}\n内容：{payload['body']}"
+        expected = f"SIM7600 received SMS\nFrom: {payload['sender']}\nBody: {payload['body']}"
         matches = []
         for row in rows:
             text = row['text']
@@ -108,7 +108,7 @@ def process_queue(db, base, send, logger, observer=observe, now=None):
         with db:
             db.execute("UPDATE incoming SET status='sending',attempts=attempts+1,last_attempt=?,baseline=?,guid=NULL WHERE signature=?",
                        (now, baseline, item['signature']))
-        message = f"SIM7600 收到短信\n发件人：{payload['sender']}\n内容：{payload['body']}"
+        message = f"SIM7600 received SMS\nFrom: {payload['sender']}\nBody: {payload['body']}"
         try:
             send(message, payload['recipient'])
             with db:

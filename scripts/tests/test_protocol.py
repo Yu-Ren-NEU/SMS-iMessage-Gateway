@@ -21,10 +21,12 @@ class ProtocolTests(unittest.TestCase):
  def test_invalid_timestamp_does_not_mix(self):
   self.assertEqual(list(groups([fragment(1,'bad','a'),fragment(2,'bad','b')])),[])
  def test_explicit_command(self):
-  self.assertEqual(parse_command('#短信 +15550000000 Hello宝'),('+15550000000','Hello宝'))
-  self.assertIsNone(parse_command('#短信 15550000000 hello'))
+  self.assertEqual(parse_command("#sms +15550000000 Hello"),("+15550000000","Hello"))
+  self.assertIsNone(parse_command("#sms 15550000000 Hello"))
+  self.assertEqual(parse_command('#\u77ed\u4fe1 +15550000000 Hello\u5b9d'),('+15550000000','Hello\u5b9d'))
+  self.assertIsNone(parse_command('#\u77ed\u4fe1 15550000000 hello'))
  def test_pdu_payload_lengths_and_unicode(self):
-  body='测试🙂'*50
+  body='\u6d4b\u8bd5🙂'*50
   result=pdus('+15550000000',body);self.assertGreater(len(result),1)
   for n,raw in result:
    self.assertEqual(len(bytes.fromhex(raw))-1,n)

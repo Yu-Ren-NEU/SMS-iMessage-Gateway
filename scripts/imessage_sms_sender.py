@@ -25,7 +25,7 @@ CONFIG = BASE / "sender_config.json"
 STATE = BASE / "sender_state.json"
 DB = Path.home() / "Library/Messages/chat.db"
 DECODER = BASE / "decode_attributed"
-COMMAND = re.compile(r"^#短信\s+(\+[1-9]\d{5,14})\s+([\s\S]{1,1000})$")
+COMMAND = re.compile(r"^#(?:sms|\u77ed\u4fe1)\s+(\+[1-9]\d{5,14})\s+([\s\S]{1,1000})$")
 
 
 def parse_command(text):
@@ -189,24 +189,24 @@ def failure_reason(error):
     if cms:
         return cms.group(0)
     if "No SMS prompt" in description:
-        return "模块未进入发送状态"
+        return "Modem did not provide an SMS prompt"
     if isinstance(error, (OSError, TimeoutError)):
-        return "串口或模块无响应"
-    return "模块未返回明确结果"
+        return "Serial port or modem is unresponsive"
+    return "Modem did not return a definitive result"
 
 
 def notify_delivery(db):
-    labels = {'delivered': '已送达（运营商报告；不代表已读）',
-              'failed': '送达失败（运营商报告）',
-              'unsupported': '本模块暂无法读取送达报告；仍需对方确认',
-              'unconfirmed': '24 小时内未收到完整送达报告；不等于发送失败'}
+    labels = {'delivered': 'Delivered (carrier report; not a read receipt)',
+              'failed': 'Delivery failed (carrier report)',
+              'unsupported': 'Delivery reports are unavailable; recipient confirmation is needed',
+              'unconfirmed': 'No complete delivery report within 24 hours; this does not mean failure'}
     for command in db.execute("SELECT * FROM outgoing WHERE COALESCE(notified,'') NOT IN ('delivered','failed')").fetchall():
         status = delivery_state(db, command)
         if status == 'waiting' or command['notified'] == status:
             continue
         # Late reports can upgrade a previous timeout notification to delivered.
         try:
-            send_imessage(f"SIM7600：发往 {command['number']} 的短信：{labels[status]}。", command['ack_to'])
+            send_imessage(f"SIM7600: SMS to {command['number']}: {labels[status]}.", command['ack_to'])
         except Exception as error:
             print(f"Delivery notification deferred: {type(error).__name__}", flush=True)
             continue
@@ -232,7 +232,7 @@ def main():
         columns = [row[1] for row in database.execute("PRAGMA table_info(message)")]
         print("message columns:", ", ".join(columns))
         rows = database.execute("""SELECT m.ROWID, m.is_from_me, h.id, m.service,
-          CASE WHEN m.text LIKE '#短信 %' THEN 1 ELSE 0 END, m.text,
+          CASE WHEN m.text LIKE '#sms %' THEN 1 ELSE 0 END, m.text,
           length(m.attributedBody), m.attributedBody
           FROM message m LEFT JOIN handle h ON h.ROWID=m.handle_id
           ORDER BY m.ROWID DESC LIMIT 3""").fetchall()
@@ -281,9 +281,9 @@ def main():
             content = body_text(text, attributed_body)
             command = parse_command(content)
             if command is None:
-                if content.strip().startswith("#短信"):
+                if content.strip().startswith(("#sms", "#\u77ed\u4fe1")):
                     outcome = {"id": rowid, "status": "invalid", "ack_to": sender,
-                               "ack_text": "SIM7600：指令格式不对，请用 #短信 +国家区号手机号 正文", "ack_sent": False}
+                               "ack_text": "SIM7600: Invalid command. Use #sms +countrycodeNumber message", "ack_sent": False}
                     state["results"].append(outcome)
                     save(state)
                     deliver_pending_acks(state)
@@ -292,10 +292,10 @@ def main():
             try:
                 receipts = send_sms(number, body, rowid, sender)
                 outcome = {"id": rowid, "number": number, "status": "sent", "receipts": receipts}
-                acknowledgement = f"SIM7600：已提交短信至 {number}（模块回执 {', '.join(receipts)}；正在等待送达报告）。"
+                acknowledgement = f"SIM7600: SMS submitted to {number} (references {', '.join(receipts)}; awaiting delivery reports)."
             except Exception as error:
                 outcome = {"id": rowid, "number": number, "status": "error", "error": str(error)}
-                acknowledgement = f"SIM7600：发往 {number} 的短信未能确认提交（{failure_reason(error)}）。为避免重复，不会自动重发。"
+                acknowledgement = f"SIM7600: Submission to {number} is unconfirmed ({failure_reason(error)}). Not automatically resending to avoid duplicates."
             outcome.update(ack_to=sender, ack_text=acknowledgement, ack_sent=False)
             state["results"].append(outcome)
             save(state)

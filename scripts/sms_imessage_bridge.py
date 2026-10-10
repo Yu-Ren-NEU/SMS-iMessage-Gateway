@@ -238,7 +238,7 @@ def recover_messages_app():
                 return True
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             pass
-    raise RuntimeError("信息应用重启后仍未响应")
+    raise RuntimeError("Messages is still unresponsive after restart")
 
 
 def send_imessage(message, recipient=DESTINATION):
@@ -256,30 +256,30 @@ end run'''
             restarted = recover_messages_app()
         except Exception as recovery_error:
             log(f"Messages restart failed: {recovery_error}")
-            raise IMessageSendError("信息应用响应超时，重启后仍未恢复") from error
+            raise IMessageSendError("Messages timed out and recovery failed") from error
         if restarted:
-            raise IMessageSendError("信息应用响应超时，已重启并等待重试") from error
-        raise IMessageSendError("信息应用响应超时，等待重启冷却后重试") from error
+            raise IMessageSendError("Messages timed out; restarted and awaiting reconciliation") from error
+        raise IMessageSendError("Messages timed out; awaiting restart cooldown") from error
     except subprocess.CalledProcessError as error:
-        raise IMessageSendError(f"信息应用发送失败（错误码 {error.returncode}）") from error
+        raise IMessageSendError(f"Messages submission failed (exit code {error.returncode})") from error
 
 
 def modem_health(modem):
     sim = modem.command("AT+CPIN?")
     if "+CPIN: READY" not in sim:
-        return "SIM 卡未就绪"
+        return "SIM is not ready"
     registration = modem.command("AT+CEREG?")
     match = re.search(r"\+CEREG:\s*\d+,\s*(\d+)", registration)
     if not match or match.group(1) not in ("1", "5"):
-        return "蜂窝网络未注册"
+        return "Cellular network is not registered"
     signal = modem.command("AT+CSQ")
     match = re.search(r"\+CSQ:\s*(\d+)", signal)
     if not match or int(match.group(1)) == 99:
-        return "无法读取蜂窝信号"
+        return "Cellular signal is unavailable"
     storage = modem.command("AT+CPMS?")
     match = re.search(r'\+CPMS:\s*"[^"]+",(\d+),(\d+)', storage)
     if match and int(match.group(2)) and int(match.group(1)) >= int(match.group(2)) - 2:
-        return f"SIM 短信存储将满（{match.group(1)}/{match.group(2)}）"
+        return f"SIM SMS storage is almost full ({match.group(1)}/{match.group(2)})"
     return None
 
 
@@ -295,7 +295,7 @@ def update_health(state, issue):
         if previous != issue or time.time() - health["last_alert"] >= 3600:
             health["last_alert"] = time.time()
             try:
-                send_imessage(f"SIM7600 状态异常：{issue}。自动转发会继续重试。")
+                send_imessage(f"SIM7600 health alert: {issue}. Monitoring will continue.")
             except Exception as error:
                 log(f"Could not send health alert: {error}")
         health["issue"] = issue
@@ -304,7 +304,7 @@ def update_health(state, issue):
         health["failures"] = 0
         if previous:
             try:
-                send_imessage("SIM7600 状态已恢复，短信转发继续运行。")
+                send_imessage("SIM7600 recovered; SMS forwarding remains active.")
             except Exception as error:
                 log(f"Could not send recovery alert: {error}")
         health["issue"] = None
@@ -418,7 +418,7 @@ def main():
                 break
         except Exception as error:
             log(f"ERROR: {error}")
-            issue = "iMessage 转发失败" if isinstance(error, IMessageSendError) else "串口或模块通信失败"
+            issue = "iMessage forwarding failed" if isinstance(error, IMessageSendError) else "Serial or modem communication failed"
             update_health(state, issue)
             if not args.dry_run:
                 process_queue(queue, BASE, send_imessage, log)
