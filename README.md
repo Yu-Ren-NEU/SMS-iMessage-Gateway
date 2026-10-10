@@ -251,7 +251,7 @@ With no existing receive-state file, the first scan marks complete messages alre
 
 ## 3D printing
 
-The printable hardware is maintained in **[Ben-3D-Prints → SIM7600 iMessage Gateway](https://github.com/Yu-Ren-NEU/Ben-3D-Prints/tree/main/models/sim7600-imessage-gateway)**.
+The printable hardware is maintained in **[Ben-3D-Prints → Waveshare SIM7600CE 4G HAT Enclosure](https://github.com/Yu-Ren-NEU/Ben-3D-Prints/tree/main/models/waveshare-sim7600ce-4g-hat-enclosure)**.
 
 It includes the final three-piece enclosure (base, lid carrier and top cover), STL/STEP files, CAD source, dimensions and print notes, plus interchangeable robot, astronaut, square-headed cat, and retro TV figurines with previews. See that directory for download links, licensing and physical fit status. The final enclosure has been owner-tested; replacement peg fit still needs verification. The third-party-derived Dou adaptation is excluded because its source license prohibits redistribution of modified material.
 
