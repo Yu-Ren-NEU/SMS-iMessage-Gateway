@@ -8,10 +8,9 @@ Tested hardware: **Waveshare SIM7600X 4G HAT with a SIMCom SIM7600CE-T module**.
 
 ```text
 scripts/                    Bridge, example configuration, installers, tests
-3d-printing/
-  enclosure/                V0.32 enclosure: STL, STEP, parameters, CAD, preview
-  plugins/                  Original robot and three replacement figurines
 ```
+
+Printable enclosure and figurines are maintained in Ben-3D-Prints (linked below).
 
 The bridge uses the Python standard library. A small Foundation helper decodes iMessage attributed text and is compiled during installation. Print-ready STL files do not require a CAD environment.
 
@@ -252,14 +251,9 @@ With no existing receive-state file, the first scan marks complete messages alre
 
 ## 3D printing
 
-![V0.32 enclosure](3d-printing/enclosure/review.png)
-![Replacement figurines](3d-printing/plugins/review.png)
+The printable hardware is maintained in **[Ben-3D-Prints → SIM7600 iMessage Gateway](https://github.com/Yu-Ren-NEU/Ben-3D-Prints/tree/main/models/sim7600-imessage-gateway)**.
 
-Print black `base`, black `lid-carrier`, and limestone-white `top-cover` in PETG. The owner confirmed the final enclosure fits well and remains stable in daily use; measured temperatures and final slicer settings are unrecorded.
-
-The lid has a 4.4 × 4.4 mm square blind socket. The original robot's 4.0 mm peg was loose. The three V2 replacements use 4.2 × 4.2 mm pegs, 1.65 mm insertion length, and a lead-in chamfer, allowing four orientations. Their first physical print does **not** fit; a reprint is planned and the cause remains unconfirmed. Do not force the peg or scale the whole figurine to change fit. The lid need not be redesigned to test a reprint.
-
-STL units are millimeters; STEP and parameters support further editing. CAD regeneration requires CadQuery and an available, licensed font for the Ben engraving; the source uses macOS Apple Chancery, which is not redistributed. Ask the print shop to review orientation and supports. The distributed figurine meshes were cleaned and checked for watertightness.
+It includes the final V0.32 three-piece enclosure (base, lid carrier and top cover), STL/STEP files, CAD source, dimensions and print notes, plus interchangeable robot, astronaut, square-headed cat, and retro TV figurines with previews. See that directory for download links, licensing and physical fit status. The final enclosure has been owner-tested; replacement peg fit still needs verification. The third-party-derived Dou adaptation is excluded because its source license prohibits redistribution of modified material.
 
 ## Verification and remaining work
 
@@ -294,4 +288,4 @@ python3 -m unittest discover -s scripts/tests -v
 
 ## License and third-party materials
 
-Original scripts, CAD source, and models are MIT licensed. Waveshare/SIMCom documents, firmware, drivers, Apple fonts, and macOS components retain their respective rights. This repository links to third-party documentation and does not distribute firmware or fonts. Real phone/email configuration, message history, device identifiers, and runtime databases are excluded.
+Original scripts are MIT licensed. Original CAD and models are maintained in the linked Ben-3D-Prints directory with their licensing notes; the third-party-derived Dou sculpt is excluded from the original project MIT license. Waveshare/SIMCom documents, firmware, drivers, Apple fonts, and macOS components retain their respective rights. This repository links to third-party documentation and does not distribute firmware or fonts. Real phone/email configuration, message history, device identifiers, and runtime databases are excluded.
