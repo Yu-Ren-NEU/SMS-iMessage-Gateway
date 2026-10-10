@@ -170,7 +170,25 @@ Edit these files in `~/Library/Application Support/SIM7600Bridge/`:
 }
 ```
 
-Use the Mac's Apple ID email for receiving commands and the iPhone's phone number for receiving forwarded messages if you want separate conversations. Configure device identities in Messages settings. The script settings control the forwarding destination and permitted command sources; they do not alter Apple account settings. An empty allowlist disables sending. Incoming SMS forwarding accepts all original SMS senders.
+### Separate Mac and iPhone iMessage identities
+
+For a Mac and iPhone signed in to the same Apple Account, use different iMessage addresses for the gateway and the phone. This is the owner's tested setup and helps avoid confusing self-addressed conversations with both sent and received copies.
+
+| Device | Enabled receiving address | Start new conversations from | Role |
+|---|---|---|---|
+| Mac | Only the chosen Apple Account email | The same email | Receive SMS commands; send forwarded SMS and status notices |
+| iPhone | Only the chosen phone number | The same phone number | Send commands to the Mac email; receive gateway messages |
+
+1. On the Mac, open **Messages → Settings → iMessage**. Under **You can be reached for messages at**, keep only the gateway email selected; choose it under **Start new conversations from** if that selector is shown.
+2. On the iPhone, open **Settings → Apps → Messages → Send & Receive** (or **Settings → Messages** on older iOS). Keep only the chosen phone number enabled for receiving/replying and select it for new conversations if the selector is shown. Keep iMessage signed in and enabled on both devices.
+3. Set `bridge_config.json` → `forward_to` to that iPhone number, including country code. Set `sender_config.json` → `allowed_senders` to the same number. From the iPhone, address `#sms` commands to the Mac email, not to the SIM card number.
+4. Create separate contacts such as **Yu's Mac** (the gateway email only) and **Yu Ren** (the iPhone number only). Keep these identities in separate contact cards; contact names are labels, while the actual email/number determines routing. Start a new conversation addressed explicitly to the gateway email; existing conversations can retain their previous identity.
+
+These settings affect your other iMessage conversations too: the Mac uses the email, while the iPhone uses the phone number. They separate addresses, not Apple Accounts. **Messages in iCloud is a separate history-sync feature**; shared conversation history can still appear on both devices when it is enabled. Address separation is not a guarantee of zero duplicate bubbles, and the bridge does not delete iMessage history to hide copies. If history isolation is desired, review Messages in iCloud for the Mac separately; disabling it affects history synchronization, not iMessage sign-in.
+
+See Apple's [Messages setup on Mac](https://support.apple.com/en-gb/guide/messages/ichte16154fb/mac) and [Messages in iCloud setup](https://support.apple.com/en-gb/guide/icloud/mm0de0d4528d/icloud).
+
+The script settings control the forwarding destination and permitted command sources; they do not alter Apple account settings. An empty allowlist disables sending. Incoming SMS forwarding accepts all original SMS senders.
 
 ### Permissions and operating conditions
 
