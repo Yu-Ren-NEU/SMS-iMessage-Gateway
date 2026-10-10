@@ -1,0 +1,4 @@
+{
+  "serial_port": "/dev/cu.usbserial-0001",
+  "forward_to": "YOUR_IPHONE_IMESSAGE_ADDRESS"
+}

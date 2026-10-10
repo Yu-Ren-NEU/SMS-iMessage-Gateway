@@ -1,0 +1,3 @@
+cadquery>=2.5,<3
+numpy-stl>=3,<4
+Pillow>=10,<13

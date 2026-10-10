@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv*/
+.DS_Store
+.env
+*.log
+bridge_config.json
+sender_config.json
+*state.json
+serial.lock
+messages_last_restart
+decode_attributed
+*.zip

@@ -1,0 +1,33 @@
+import sys,unittest
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from sms_imessage_bridge import groups
+from imessage_sms_sender import parse_command,pdus,chunks
+
+def fragment(part,stamp,digest,ref=9):
+ return {'sender':'+15550000000','timestamp':stamp,'ref':ref,'total':2,'part':part,'digest':digest,'content':str(part)}
+class ProtocolTests(unittest.TestCase):
+ def test_multipart_different_seconds(self):
+  items=[fragment(2,'62901201039023','b'),fragment(1,'62901201036023','a')]
+  result=list(groups(items));self.assertEqual(len(result),1);self.assertEqual(result[0][2],'12')
+ def test_reference_reused_next_day(self):
+  items=[fragment(1,'62901201036023','a'),fragment(2,'62901201039023','b'),fragment(1,'62902201036023','c'),fragment(2,'62902201039023','d')]
+  self.assertEqual(len(list(groups(items))),2)
+ def test_missing_part_is_retained(self):
+  self.assertEqual(list(groups([fragment(1,'62901201036023','a')])),[])
+ def test_single_sms(self):
+  item=fragment(1,'62901201036023','a');item.update(ref=None,total=None,part=None,content='hello')
+  self.assertEqual(list(groups([item]))[0][2],'hello')
+ def test_invalid_timestamp_does_not_mix(self):
+  self.assertEqual(list(groups([fragment(1,'bad','a'),fragment(2,'bad','b')])),[])
+ def test_explicit_command(self):
+  self.assertEqual(parse_command('#短信 +15550000000 Hello宝'),('+15550000000','Hello宝'))
+  self.assertIsNone(parse_command('#短信 15550000000 hello'))
+ def test_pdu_payload_lengths_and_unicode(self):
+  body='测试🙂'*50
+  result=pdus('+15550000000',body);self.assertGreater(len(result),1)
+  for n,raw in result:
+   self.assertEqual(len(bytes.fromhex(raw))-1,n)
+  pieces=chunks(body,134);self.assertEqual(''.join(pieces),body)
+  self.assertTrue(all(len(s.encode('utf-16-be'))<=134 for s in pieces))
+if __name__=='__main__':unittest.main()
