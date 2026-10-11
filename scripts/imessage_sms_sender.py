@@ -17,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from delivery_store import connect as delivery_db, delivery_state
+from delivery_store import connect as delivery_db
 from sms_imessage_bridge import BASE, Modem, send_imessage
 
 
@@ -84,7 +84,7 @@ def pdus(number, body):
     for position, part in enumerate(parts, 1):
         udh = bytes([5, 0, 3, reference, len(parts), position]) if len(parts) > 1 else b""
         content = udh + part.encode("utf-16-be")
-        tpdu = bytes([0x71 if udh else 0x31, 0, len(number) - 1, 0x91])
+        tpdu = bytes([0x51 if udh else 0x11, 0, len(number) - 1, 0x91])
         tpdu += bytes.fromhex(semi_octets(number))
         tpdu += bytes([0, 8, 0xAA, len(content)]) + content
         result.append((len(tpdu), "00" + tpdu.hex().upper()))
@@ -105,14 +105,9 @@ def _send_sms_tracked(number, body, command_id, ack_to, tracking):
     with Modem() as modem:
         modem.command("AT")
         modem.command("AT+CMGF=0")
-        capability = True
-        try:
-            modem.command('AT+CNMI=2,1,0,2,0')
-            modem.command('AT+CPMS="SR"')
-        except RuntimeError:
-            capability = False
-        finally:
-            modem.command('AT+CPMS="SM","SM","SM"')
+        # Submission is the success criterion; do not request carrier reports.
+        capability = False
+        modem.command('AT+CPMS="SM","SM","SM"')
         segments = pdus(number, body)
         if tracking:
             with tracking:
@@ -195,25 +190,6 @@ def failure_reason(error):
     return "Modem did not return a definitive result"
 
 
-def notify_delivery(db):
-    labels = {'delivered': 'Delivered (carrier report; not a read receipt)',
-              'failed': 'Delivery failed (carrier report)',
-              'unsupported': 'Delivery reports are unavailable; recipient confirmation is needed',
-              'unconfirmed': 'No complete delivery report within 24 hours; this does not mean failure'}
-    for command in db.execute("SELECT * FROM outgoing WHERE COALESCE(notified,'') NOT IN ('delivered','failed')").fetchall():
-        status = delivery_state(db, command)
-        if status == 'waiting' or command['notified'] == status:
-            continue
-        # Late reports can upgrade a previous timeout notification to delivered.
-        try:
-            send_imessage(f"SIM7600: SMS to {command['number']}: {labels[status]}.", command['ack_to'])
-        except Exception as error:
-            print(f"Delivery notification deferred: {type(error).__name__}", flush=True)
-            continue
-        with db:
-            db.execute('UPDATE outgoing SET notified=? WHERE command_id=?', (status, command['command_id']))
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-access", action="store_true")
@@ -269,7 +245,6 @@ def main():
                 print(f"Could not reopen Messages: {error}", file=sys.stderr, flush=True)
             next_app_check = time.monotonic() + 30
         deliver_pending_acks(state)
-        notify_delivery(tracking)
         rows = database.execute("""SELECT m.ROWID, m.text, m.attributedBody, m.is_from_me, h.id, m.service
           FROM message m LEFT JOIN handle h ON h.ROWID=m.handle_id
           WHERE m.ROWID>? ORDER BY m.ROWID""", (state["last_id"],)).fetchall()
@@ -292,7 +267,7 @@ def main():
             try:
                 receipts = send_sms(number, body, rowid, sender)
                 outcome = {"id": rowid, "number": number, "status": "sent", "receipts": receipts}
-                acknowledgement = f"SIM7600: SMS submitted to {number} (references {', '.join(receipts)}; awaiting delivery reports)."
+                acknowledgement = f"SIM7600: SMS sent successfully to {number} (submission confirmed by modem)."
             except Exception as error:
                 outcome = {"id": rowid, "number": number, "status": "error", "error": str(error)}
                 acknowledgement = f"SIM7600: Submission to {number} is unconfirmed ({failure_reason(error)}). Not automatically resending to avoid duplicates."

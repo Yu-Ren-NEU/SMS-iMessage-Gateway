@@ -76,7 +76,7 @@ def main():
     print('Upgraded both existing services. Configuration and state retained.')
     print('Database permission is checked by the background sender; Terminal need not read Messages.')
     print('Backup:', backup)
-    print('Send a new SMS command and check submitted/delivery notices; then test inbound forwarding.')
+    print('Send a new SMS command and check the submission success notice; then test inbound forwarding.')
 
 
 if __name__ == '__main__':

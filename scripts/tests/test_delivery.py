@@ -111,10 +111,10 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(report['discharged']-report['submitted'],10)
         self.assertIsNone(decode_report('00000000'))
         with self.assertRaises(ValueError):decode_report('0002010B91')
-    def test_requests_delivery_report_on_each_pdu(self):
+    def test_does_not_request_delivery_report_on_any_pdu(self):
         for body in ('hello','\u6d4b\u8bd5'*100):
             for _, raw in pdus(NUMBER,body):
-                self.assertTrue(bytes.fromhex(raw)[1]&0x20)
+                self.assertFalse(bytes.fromhex(raw)[1]&0x20)
 
 
 class MessageObservationTests(unittest.TestCase):

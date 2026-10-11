@@ -107,38 +107,24 @@ sequenceDiagram
     participant Messages as Mac Messages
     participant TX as Send process
     participant Modem as SIM7600
-    participant RX as Receive process
     participant Store as Local SQLite tracking
     iPhone->>Messages: Send #sms command to Mac address
     TX->>Messages: Poll chat.db with read-only access
     TX->>TX: Validate allowlist and persist command progress
     TX->>Store: Record outgoing command and segment attempts
-    TX->>Modem: Lock port and submit PDUs requesting reports
-    Modem-->>TX: Return submission reference or error
+    TX->>Modem: Lock port and submit SMS PDUs
+    Modem-->>TX: Return CMGS reference and OK for each segment
     TX->>Store: Save confirmed segment references
-    TX->>Messages: Send submitted or unconfirmed notice
-    Messages-->>iPhone: Show submission result
-    opt Carrier provides a status report
-        RX->>Modem: Poll SR storage under serial lock
-        Modem-->>RX: Return status report PDUs
-        RX->>Store: Persist and match recipient, reference and time
-        RX->>Modem: Delete archived report
+    alt Every segment has confirmed submission
+        TX->>Messages: Notify SMS sent successfully
+    else Submission fails or is uncertain
+        TX->>Messages: Notify submission unconfirmed without automatic resend
     end
-    TX->>Store: Check status of all SMS segments
-    alt All segments report delivered
-        TX->>Messages: Notify delivered
-    else A segment reports permanent failure
-        TX->>Messages: Notify delivery failure
-    else Report storage is unsupported
-        TX->>Messages: Notify that delivery tracking is unavailable
-    else No complete report within 24 hours
-        TX->>Messages: Notify unconfirmed, not failed
-    end
-    Messages-->>iPhone: Show available delivery status
-    Note over TX,iPhone: Delivery is not a read receipt
+    Messages-->>iPhone: Show send result
+    Note over TX,iPhone: Success means modem submission, not recipient delivery or read
 ```
 
-Carrier reports are optional and have not been received in this setup's live test. While waiting within the 24-hour window, no final delivery notice is sent. Late successful reports can update an earlier unconfirmed result.
+The sender does not request or wait for carrier delivery reports and does not send 24-hour report timeout reminders.
 
 Incoming SMS is polled about every five seconds; commands about every three seconds. Network conditions, Messages responsiveness, and Mac sleep affect latency. Multipart grouping uses sender, reference, total segment count, and a one-hour window; timestamps need not match exactly. Incomplete messages remain on the SIM. Complete messages are persisted before SIM cleanup, independently of iMessage availability.
 
@@ -228,7 +214,7 @@ The destination must use international `+` format. Bodies contain 1–1000 chara
 
 - **Incoming queue:** `delivery.sqlite3` commits the complete SMS before SIM deletion. Cleanup retries use saved PDU digests and current indices, including partially deleted multipart messages. Keep this database and the original state files.
 - **iMessage:** the observer matches recipient, body, outgoing record, and GUID, then checks `date_delivered` / `is_delivered`. Accepted messages remain recorded while Messages handles offline recipients. Explicit failures can retry with backoff, at most eight attempts. Uncertain submissions are reconciled before retrying; unavailable permissions or ambiguous matches prevent blind resends.
-- **Outgoing SMS:** each PDU requests a carrier status report. `AT+CNMI=2,1,0,2,0` and `SR` storage retrieve reports. All segments must report successful delivery before a delivered notice. Permanent failure produces a failure notice. After 24 hours without complete reports, the notice says unconfirmed, not failed; late successful reports can update it. Ambiguous reference matches are not guessed.
+- **Outgoing SMS:** success is acknowledged immediately after every segment returns `+CMGS` and `OK`. Carrier reports are not requested or awaited, and no 24-hour timeout notice is generated. Submission errors or uncertain results still produce a notice without automatic resend, to avoid duplicates. Success confirms modem submission, not receipt or reading by the recipient.
 - **Health:** SIM readiness, network registration, signal, and SMS storage are checked about once a minute. Persistent anomalies produce alerts, roughly hourly while unresolved, followed by recovery notices. This cannot directly identify an unpaid balance. An iMessage outage can also prevent alerts from arriving.
 
 Carrier reports have **not yet been observed on the tested Telecom setup**, although submission and recipient-confirmed arrival work. iMessage delivery observation has passed a live test. Delivered does not mean read. See the [SIM7600 AT manual](https://files.waveshare.com/upload/6/68/SIM7500_SIM7600_Series_AT_Command_Manual_V2.00.pdf) for report configuration and storage.
@@ -273,7 +259,7 @@ Remaining work:
 
 1. Record post-upgrade AT+CGMR / AT+CSUB output and exact PCB revision. Redact IMEI, MEID, serial numbers, and personal identifiers from any future photographs.
 2. Broaden tests for reference reuse, time zones, malformed PDUs, and missing fragments. Incomplete fragments have no expiry policy and can still fill SIM storage.
-3. Validate carrier reports, multipart delivery reports, and iMessage offline-recipient recovery. Unsupported fields or absent reports remain unconfirmed; exactly-once delivery and read receipts are not promised.
+3. Validate iMessage offline-recipient recovery and multipart SMS submission. Carrier delivery notifications are disabled; exactly-once delivery and read receipts are not promised.
 4. Inject real interruption during queue commit, serial transmission, and cleanup. Partial-delete retry is tested offline; physical interruption at these boundaries is not.
 5. Test serial reconnection and sleep/wake systematically. LaunchAgent restarts remain the recovery mechanism for a crashed process.
 6. Add retention policies for local history, queue, and logs. `--inspect` reveals recent messages and is for private troubleshooting only.
