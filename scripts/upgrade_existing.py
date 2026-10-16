@@ -73,7 +73,9 @@ def main():
     finally:
         for plist in stopped:
             subprocess.run(['launchctl','bootstrap',domain,str(plist)], check=True)
-    print('Upgraded both existing services. Configuration and state retained.')
+    from install_watchdog import install as install_watchdog
+    install_watchdog(BASE)
+    print('Upgraded both existing services and watchdog. Configuration and state retained.')
     print('Database permission is checked by the background sender; Terminal need not read Messages.')
     print('Backup:', backup)
     print('Send a new SMS command and check the submission success notice; then test inbound forwarding.')

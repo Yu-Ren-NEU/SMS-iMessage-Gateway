@@ -30,4 +30,6 @@ if args.start:
   agent=AGENTS/('com.sim7600bridge.'+role+'.plist')
   subprocess.run(['launchctl','bootout','gui/'+str(os.getuid()),str(agent)],capture_output=True)
   subprocess.run(['launchctl','bootstrap','gui/'+str(os.getuid()),str(agent)],check=True)
- print('Started both LaunchAgents.')
+ from install_watchdog import install as install_watchdog
+ install_watchdog(BASE)
+ print('Started both LaunchAgents and watchdog.')

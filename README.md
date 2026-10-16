@@ -200,7 +200,7 @@ python3 scripts/install.py --start
 launchctl list | grep com.sim7600bridge
 ```
 
-The installer creates `com.sim7600bridge.receive` and `com.sim7600bridge.send`. Logs, configuration, state, and message history stay in the local application directory and are excluded from Git. Stop any older installation before starting a second set of services. Preserve existing state during migration.
+The installer creates `com.sim7600bridge.receive`, `com.sim7600bridge.send`, and the independent `com.sim7600bridge.watchdog`. Logs, configuration, state, and message history stay in the local application directory and are excluded from Git. Stop any older installation before starting a second set of services. Preserve existing state during migration.
 
 ### Usage and delivery status
 
@@ -216,6 +216,20 @@ The destination must use international `+` format. Bodies contain 1–1000 chara
 - **iMessage:** the observer matches recipient, body, outgoing record, and GUID, then checks `date_delivered` / `is_delivered`. Accepted messages remain recorded while Messages handles offline recipients. Explicit failures can retry with backoff, at most eight attempts. Uncertain submissions are reconciled before retrying; unavailable permissions or ambiguous matches prevent blind resends.
 - **Outgoing SMS:** success is acknowledged immediately after every segment returns `+CMGS` and `OK`. Carrier reports are not requested or awaited, and no 24-hour timeout notice is generated. Submission errors or uncertain results still produce a notice without automatic resend, to avoid duplicates. Success confirms modem submission, not receipt or reading by the recipient.
 - **Health:** SIM readiness, network registration, signal, and SMS storage are checked about once a minute. Persistent anomalies produce alerts, roughly hourly while unresolved, followed by recovery notices. This cannot directly identify an unpaid balance. An iMessage outage can also prevent alerts from arriving.
+
+### Automatic forwarding recovery
+
+An independent watchdog checks the local queue, receiver heartbeat and both LaunchAgents every 30 seconds. It does not send SMS or modify forwarding records.
+
+- A message still unconfirmed three minutes after being queued triggers an iMessage alert. A missing service or receiver heartbeat older than three minutes also triggers recovery checks.
+- Stuck receiver work, a stale heartbeat, or a stopped service can trigger a restart. Restart attempts are limited to once per 30 minutes and three recovery cycles per rolling 24 hours; counters survive restarts. Existing Messages history reconciliation still runs before retrying an uncertain forward.
+- Messages already submitted to iMessage may simply be waiting for an offline phone. They can trigger a pending alert, but do not trigger restarts solely for delayed delivery.
+- When the services are healthy and all messages tracked during the incident have confirmed iMessage delivery, a recovery notice reports the monitored incident duration and message count. This is delivery confirmation, not a read receipt.
+- Notifications use the configured iMessage forwarding destination. If that channel is unavailable, notices remain pending for retry; no independent notification channel is configured. Revoked macOS permissions can still require manual reauthorization after the automatic restart limit is reached.
+
+Runtime files stay in `~/Library/Application Support/SIM7600Bridge/`: `receive_heartbeat`, `watchdog_state.json`, `watchdog_config.json`, `watchdog.out.log`, and `watchdog.err.log`. No message bodies are written to watchdog state or logs. The watchdog reuses the existing receiver interpreter and recognizes both legacy and current service labels.
+
+For an existing installation, run `python3 scripts/upgrade_existing.py`; it preserves configuration and queue state, upgrades the services, and installs the watchdog. If the scripts have already been updated, `python3 scripts/install_watchdog.py` registers just the watchdog. New installations use `python3 scripts/install.py --start` after configuration.
 
 Carrier reports have **not yet been observed on the tested Telecom setup**, although submission and recipient-confirmed arrival work. iMessage delivery observation has passed a live test. Delivered does not mean read. See the [SIM7600 AT manual](https://files.waveshare.com/upload/6/68/SIM7500_SIM7600_Series_AT_Command_Manual_V2.00.pdf) for report configuration and storage.
 

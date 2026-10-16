@@ -367,6 +367,7 @@ def main():
     next_report_check = 0
     queue = delivery_db(BASE)
     while True:
+        (BASE / 'receive_heartbeat').touch()
         try:
             with Modem() as modem:
                 modem.command("AT")
