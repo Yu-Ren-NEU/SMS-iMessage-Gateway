@@ -26,7 +26,7 @@ def decide(state, records, running, heartbeat, now):
     """Pure policy. Return updated state and actions for deterministic testing."""
     state = json.loads(json.dumps(state))
     actions = []
-    pending = [r for r in records if r['status'] != 'delivered']
+    pending = [r for r in records if r['status'] not in ('submitted','delivered')]
     old = [r for r in pending if now-r['created'] >= THRESHOLD]
     stale = heartbeat is not None and now-heartbeat >= THRESHOLD
     unhealthy = not all(running.values()) or stale or bool(old)
@@ -39,12 +39,11 @@ def decide(state, records, running, heartbeat, now):
         if unhealthy and not episode['alerted']:
             actions.append(('alert', len(pending), 0))
         lookup = {r['signature']:r['status'] for r in records}
-        recovered = not unhealthy and all(lookup.get(k)=='delivered' for k in episode['tracked'])
+        recovered = not unhealthy and all(lookup.get(k) in ('submitted','delivered') for k in episode['tracked'])
         if recovered:
             actions.append(('recovered', len(episode['tracked']), max(0,int(now-episode['started']))))
         else:
-            # A submitted iMessage may be waiting for an offline phone. Do not
-            # restart solely because its delivery acknowledgement is delayed.
+            # Submitted messages are complete; only unresolved work can block.
             blocked = any(r['status'] not in ('submitted','delivered') for r in old)
             targets = [label for label, alive in running.items() if not alive]
             receiver = state['receiver']
@@ -77,10 +76,10 @@ def notify(kind, count, duration, zh):
     from sms_imessage_bridge import send_imessage
     if zh:
         text = (f'SIM7600：短信转发异常，当前 {count} 条待确认；已启动自动检查与恢复（自动重启最多每 30 分钟一次、每天 3 次）。' if kind=='alert' else
-                f'SIM7600：短信转发已恢复。本次监测异常持续约 {max(1,duration//60)} 分钟，积压 {count} 条已全部确认 iMessage 送达。')
+                f'SIM7600：短信转发已恢复。本次监测异常持续约 {max(1,duration//60)} 分钟，积压 {count} 条已全部完成 iMessage 提交。')
     else:
         text = (f'SIM7600: Forwarding needs attention; {count} message(s) pending. Automatic recovery is active (at most once per 30 minutes, three times per 24 hours).' if kind=='alert' else
-                f'SIM7600: Forwarding recovered after about {max(1,duration//60)} minute(s). All {count} tracked message(s) have confirmed iMessage delivery.')
+                f'SIM7600: Forwarding recovered after about {max(1,duration//60)} minute(s). All {count} tracked message(s) have been submitted to iMessage.')
     send_imessage(text)
 
 

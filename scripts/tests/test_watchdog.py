@@ -17,9 +17,9 @@ class WatchdogTests(unittest.TestCase):
         s['episode']['alerted']=True
         _,a=decide(s,[self.row()],self.running,230,230)
         self.assertEqual(a,[])
-    def test_submitted_offline_alert_without_restart(self):
+    def test_submitted_message_never_alerts_or_restarts(self):
         _,a=decide(self.state,[self.row('submitted')],self.running,200,200)
-        self.assertEqual(a,[('alert',1,0)])
+        self.assertEqual(a,[])
     def test_hung_or_dead_service(self):
         _,a=decide(self.state,[],self.running,0,200)
         self.assertIn(('restart','rx',0),a)
@@ -37,10 +37,10 @@ class WatchdogTests(unittest.TestCase):
         records=[dict(r,status='delivered') for r in records]
         _,a=decide(s,records,self.running,300,300)
         self.assertEqual(a,[('recovered',2,100)])
-    def test_no_recovery_while_tracked_message_unconfirmed(self):
+    def test_submitted_message_completes_existing_incident(self):
         s,_=decide(self.state,[self.row()],self.running,200,200)
         _,a=decide(s,[self.row('submitted')],self.running,250,250)
-        self.assertFalse(any(x[0]=='recovered' for x in a))
+        self.assertIn(('recovered',1,50),a)
 
     def test_runtime_persists_alert_and_recovery_without_resending_sms(self):
         import tempfile,json,sqlite3

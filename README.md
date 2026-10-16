@@ -90,13 +90,12 @@ sequenceDiagram
         Note over RX,Modem: Retry failed cleanup using digests and current indices
         RX->>Messages: Submit iMessage via AppleScript
         Messages-->>iPhone: Forward original sender and body
-        RX->>Messages: Read matching GUID and delivery fields
-        RX->>Store: Record submitted or observed delivered
-        Note over RX,Store: Keep the local record even after delivery
+        RX->>Store: Mark forwarding complete on successful submission
+        Note over RX,Store: Keep the local record without waiting for delivery
     end
 ```
 
-The SIM is cleared only after the complete message is committed locally. iMessage submission and delivery are separate states. Uncertain sends are checked against the Messages database before any retry.
+The SIM is cleared only after the complete message is committed locally. Successful iMessage submission completes forwarding; recipient delivery is not required. Uncertain sends are checked against the Messages database before any retry.
 
 ### iMessage command to outgoing SMS
 
@@ -213,7 +212,7 @@ Send from an allowlisted address to the Mac's iMessage address:
 The destination must use international `+` format. Bodies contain 1–1000 characters. Unicode text uses UTF-16BE SMS PDUs; longer bodies are segmented and may incur multiple SMS charges. The original Chinese command keyword remains accepted for backward compatibility.
 
 - **Incoming queue:** `delivery.sqlite3` commits the complete SMS before SIM deletion. Cleanup retries use saved PDU digests and current indices, including partially deleted multipart messages. Keep this database and the original state files.
-- **iMessage:** the observer matches recipient, body, outgoing record, and GUID, then checks `date_delivered` / `is_delivered`. Accepted messages remain recorded while Messages handles offline recipients. Explicit failures can retry with backoff, at most eight attempts. Uncertain submissions are reconciled before retrying; unavailable permissions or ambiguous matches prevent blind resends.
+- **iMessage:** successful AppleScript submission completes forwarding (`submitted` is a terminal queue state, as is legacy `delivered`). No recipient delivery confirmation is required, and these messages are not rechecked or resent if they disappear from Messages history. Uncertain submissions still reconcile recipient, body, outgoing record and GUID before retrying; unavailable database permissions or ambiguous matches prevent blind resends. Failed submissions can retry with backoff, at most eight attempts.
 - **Outgoing SMS:** success is acknowledged immediately after every segment returns `+CMGS` and `OK`. Carrier reports are not requested or awaited, and no 24-hour timeout notice is generated. Submission errors or uncertain results still produce a notice without automatic resend, to avoid duplicates. Success confirms modem submission, not receipt or reading by the recipient.
 - **Health:** SIM readiness, network registration, signal, and SMS storage are checked about once a minute. Persistent anomalies produce alerts, roughly hourly while unresolved, followed by recovery notices. This cannot directly identify an unpaid balance. An iMessage outage can also prevent alerts from arriving.
 
@@ -221,17 +220,17 @@ The destination must use international `+` format. Bodies contain 1–1000 chara
 
 An independent watchdog checks the local queue, receiver heartbeat and both LaunchAgents every 30 seconds. It does not send SMS or modify forwarding records.
 
-- A message still unconfirmed three minutes after being queued triggers an iMessage alert. A missing service or receiver heartbeat older than three minutes also triggers recovery checks.
+- A message whose iMessage submission remains unresolved three minutes after being queued triggers an iMessage alert. A missing service or receiver heartbeat older than three minutes also triggers recovery checks.
 - Stuck receiver work, a stale heartbeat, or a stopped service can trigger a restart. Restart attempts are limited to once per 30 minutes and three recovery cycles per rolling 24 hours; counters survive restarts. Existing Messages history reconciliation still runs before retrying an uncertain forward.
-- Messages already submitted to iMessage may simply be waiting for an offline phone. They can trigger a pending alert, but do not trigger restarts solely for delayed delivery.
-- When the services are healthy and all messages tracked during the incident have confirmed iMessage delivery, a recovery notice reports the monitored incident duration and message count. This is delivery confirmation, not a read receipt.
+- Messages successfully submitted to iMessage are complete and never trigger backlog alerts or recovery restarts, even if recipient delivery is unconfirmed or the message is later deleted.
+- When the services are healthy and all messages tracked during the incident have completed iMessage submission, a recovery notice reports the monitored incident duration and message count. This confirms submission, not recipient delivery or reading.
 - Notifications use the configured iMessage forwarding destination. If that channel is unavailable, notices remain pending for retry; no independent notification channel is configured. Revoked macOS permissions can still require manual reauthorization after the automatic restart limit is reached.
 
 Runtime files stay in `~/Library/Application Support/SIM7600Bridge/`: `receive_heartbeat`, `watchdog_state.json`, `watchdog_config.json`, `watchdog.out.log`, and `watchdog.err.log`. No message bodies are written to watchdog state or logs. The watchdog reuses the existing receiver interpreter and recognizes both legacy and current service labels.
 
 For an existing installation, run `python3 scripts/upgrade_existing.py`; it preserves configuration and queue state, upgrades the services, and installs the watchdog. If the scripts have already been updated, `python3 scripts/install_watchdog.py` registers just the watchdog. New installations use `python3 scripts/install.py --start` after configuration.
 
-Carrier reports have **not yet been observed on the tested Telecom setup**, although submission and recipient-confirmed arrival work. iMessage delivery observation has passed a live test. Delivered does not mean read. See the [SIM7600 AT manual](https://files.waveshare.com/upload/6/68/SIM7500_SIM7600_Series_AT_Command_Manual_V2.00.pdf) for report configuration and storage.
+Carrier reports have **not yet been observed on the tested Telecom setup**, although submission and recipient-confirmed arrival work. The former iMessage delivery observer passed a live test, but routine delivery verification is now disabled; only uncertain submissions use history reconciliation. See the [SIM7600 AT manual](https://files.waveshare.com/upload/6/68/SIM7500_SIM7600_Series_AT_Command_Manual_V2.00.pdf) for report configuration and storage.
 
 Inspect counts without revealing message bodies:
 

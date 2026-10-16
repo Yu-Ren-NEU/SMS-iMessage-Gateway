@@ -40,16 +40,18 @@ class DeliveryTests(unittest.TestCase):
             def command(self, command):calls.append(command)
         cleanup_persisted(Modem(),self.db,[{'index':7,'digest':'b'},{'index':8,'digest':'unrelated'}])
         self.assertEqual(calls,['AT+CMGD=7'])
-    def test_submission_preserves_queue_until_delivery(self):
+    def test_submission_finishes_without_delivery_observation(self):
         self.enqueue(); calls=[]
         with patch('imessage_delivery.snapshot',return_value=10):
             process_queue(self.db,self.base,lambda *a:calls.append(a),lambda _:None,now=100)
         self.assertEqual(len(calls),1)
         self.assertEqual(self.db.execute('SELECT status FROM incoming').fetchone()[0],'submitted')
+        def observer(*args):
+            raise AssertionError('Submitted messages must not query Messages history')
         process_queue(self.db,self.base,lambda *a:calls.append(a),lambda _:None,
-                      observer=lambda *a:('delivered','guid'),now=200)
+                      observer=observer,now=200)
         self.assertEqual(len(calls),1)
-        self.assertEqual(self.db.execute('SELECT status FROM incoming').fetchone()[0],'delivered')
+        self.assertEqual(self.db.execute('SELECT status FROM incoming').fetchone()[0],'submitted')
     def test_uncertain_submission_with_permission_loss_never_blindly_retries(self):
         import sqlite3
         self.enqueue();calls=[]
