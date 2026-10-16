@@ -74,6 +74,16 @@ class DeliveryTests(unittest.TestCase):
             process_queue(self.db,self.base,send,lambda _:None,now=100)
         process_queue(self.db,self.base,send,lambda _:None,observer=lambda *a:(None,None),now=1000)
         self.assertEqual(len(calls),1)
+    def test_permission_recovery_reconciles_before_retry(self):
+        self.db.execute("INSERT INTO incoming(signature,payload,created,status,attempts,last_attempt,baseline) VALUES(?,?,?,'sending',1,100,NULL)",
+                        ('recovery',json.dumps({'recipient':NUMBER,'sender':'x','body':'hello'}),100))
+        self.db.commit()
+        send=unittest.mock.Mock()
+        with patch('imessage_delivery.snapshot',return_value=20):
+            process_queue(self.db,self.base,send,lambda _:None,observer=lambda *a:('not_found',None),now=1000)
+        send.assert_called_once()
+        self.assertEqual(self.db.execute("SELECT status FROM incoming WHERE signature='recovery'").fetchone()[0],'submitted')
+
     def test_reports_require_all_parts(self):
         command=self.outgoing(2)
         report={'digest':'r1','number':NUMBER,'mr':1,'submitted':100,'status':0}
@@ -137,7 +147,7 @@ class MessageObservationTests(unittest.TestCase):
             item={'guid':None,'baseline':0,'created':978307201}
             with patch('imessage_delivery.open_messages',side_effect=opened):
                 self.assertEqual(observe(item,payload,folder),('delivered','g'))
-                self.assertEqual(observe(item,dict(payload,recipient='+15550000001'),folder),(None,None))
+                self.assertEqual(observe(item,dict(payload,recipient='+15550000001'),folder),('not_found',None))
                 self.assertEqual(observe(dict(item,baseline=None),payload,folder),('delivered','g'))
                 db=opened();db.execute('UPDATE message SET error=1');db.commit();db.close()
                 self.assertEqual(observe(item,payload,folder),('failed','g'))

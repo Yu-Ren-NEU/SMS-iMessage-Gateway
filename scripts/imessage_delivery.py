@@ -59,7 +59,7 @@ def observe(item, payload, base):
             if text == expected:
                 matches.append(row)
         if len(matches) != 1:
-            return ('ambiguous' if len(matches) > 1 else None), None
+            return ('ambiguous' if len(matches) > 1 else 'not_found'), None
         row = matches[0]
         if 'error' in optional and row['error']:
             return 'failed', row['guid']
@@ -76,10 +76,11 @@ def process_queue(db, base, send, logger, observer=observe, now=None):
             db.execute('UPDATE incoming SET last_check=? WHERE signature=?', (now, item['signature']))
         payload = json.loads(item['payload'])
         current_status = item['status']
+        status = None
         if item['status'] != 'queued':
             try:
                 status, guid = observer(item, payload, base)
-                if status:
+                if status and status != 'not_found':
                     current_status = status
                     with db:
                         db.execute('UPDATE incoming SET status=?,guid=? WHERE signature=?',
@@ -94,7 +95,7 @@ def process_queue(db, base, send, logger, observer=observe, now=None):
                     continue
             if current_status in ('submitted', 'ambiguous'):
                 continue
-            if current_status == 'sending' and (item['baseline'] is None or now - item['last_attempt'] < 120):
+            if current_status == 'sending' and ((item['baseline'] is None and status != 'not_found') or now - item['last_attempt'] < 120):
                 continue
         delay = min(3600, 60 * (2 ** min(item['attempts'], 6)))
         if item['last_attempt'] and now - item['last_attempt'] < delay:
