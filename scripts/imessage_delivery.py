@@ -71,7 +71,7 @@ def observe(item, payload, base):
 
 def process_queue(db, base, send, logger, observer=observe, now=None):
     now = time.time() if now is None else now
-    for item in db.execute("SELECT * FROM incoming WHERE status NOT IN ('submitted','delivered') ORDER BY CASE WHEN status='queued' THEN 0 ELSE 1 END,last_check,created LIMIT 50").fetchall():
+    for item in db.execute("SELECT * FROM incoming WHERE status NOT IN ('submitted','delivered') ORDER BY created,rowid LIMIT 50").fetchall():
         with db:
             db.execute('UPDATE incoming SET last_check=? WHERE signature=?', (now, item['signature']))
         payload = json.loads(item['payload'])
@@ -110,11 +110,12 @@ def process_queue(db, base, send, logger, observer=observe, now=None):
             db.execute("UPDATE incoming SET status='sending',attempts=attempts+1,last_attempt=?,baseline=?,guid=NULL WHERE signature=?",
                        (now, baseline, item['signature']))
         message = f"SIM7600 received SMS\nFrom: {payload['sender']}\nBody: {payload['body']}"
+        started = time.monotonic()
         try:
             send(message, payload['recipient'])
             with db:
                 db.execute("UPDATE incoming SET status='submitted',error=NULL WHERE signature=?", (item['signature'],))
-            logger(f"Queued iMessage submitted ({item['signature'][:10]}); forwarding complete")
+            logger(f"Queued iMessage submitted ({item['signature'][:10]}); forwarding complete; queue_age={max(0, now-item['created']):.2f}s; submit_duration={time.monotonic()-started:.2f}s")
         except Exception as error:
             with db:
                 db.execute('UPDATE incoming SET error=? WHERE signature=?',

@@ -205,6 +205,10 @@ def groups(messages):
                 pending.append(match)
             match["parts"].append(sms)
         batches.extend(batch["parts"] for batch in pending)
+    # SIM slots are reused and are not arrival order. Sort complete candidates
+    # by earliest SMSC timestamp, with storage index as a stable tie-breaker.
+    batches.sort(key=lambda parts: (min((received_at(p) or datetime.max for p in parts)),
+                                    min(p.get('index', 0) for p in parts)))
     for parts in batches:
         total = parts[0]["total"] or 1
         if total > 1 and set(p["part"] for p in parts) != set(range(1, total + 1)):
@@ -364,7 +368,6 @@ def main():
     first_run = not STATE.exists()
     seen = set(state["seen"])
     next_health_check = 0
-    next_report_check = 0
     queue = delivery_db(BASE)
     while True:
         (BASE / 'receive_heartbeat').touch()
@@ -373,14 +376,6 @@ def main():
                 modem.command("AT")
                 modem.command("AT+CMGF=0")
                 modem.command('AT+CPMS="SM","SM","SM"')
-                if not args.dry_run and time.monotonic() >= next_report_check:
-                    try:
-                        modem.command('AT+CNMI=2,1,0,2,0')
-                        collect_reports(modem, queue)
-                        next_report_check = time.monotonic() + 30
-                    except RuntimeError as error:
-                        log(f"Stored SMS reports unavailable: {error}")
-                        next_report_check = time.monotonic() + 1800
                 if time.monotonic() >= next_health_check:
                     update_health(state, modem_health(modem))
                     next_health_check = time.monotonic() + 60
@@ -425,7 +420,7 @@ def main():
                 process_queue(queue, BASE, send_imessage, log)
             if args.once:
                 raise
-        time.sleep(5)
+        time.sleep(1)
 
 
 if __name__ == "__main__":

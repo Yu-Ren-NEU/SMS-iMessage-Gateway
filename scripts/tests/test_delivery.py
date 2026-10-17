@@ -86,6 +86,18 @@ class DeliveryTests(unittest.TestCase):
         send.assert_called_once()
         self.assertEqual(self.db.execute("SELECT status FROM incoming WHERE signature='recovery'").fetchone()[0],'submitted')
 
+    def test_ready_older_retry_precedes_newer_queued_message(self):
+        for signature,status,created in [('new','queued',200),('old','failed',100)]:
+            payload=json.dumps({'sender':'x','body':signature,'recipient':NUMBER})
+            self.db.execute('INSERT INTO incoming(signature,payload,created,status,last_check) VALUES(?,?,?,?,?)',
+                            (signature,payload,created,status,900 if signature=='old' else 0))
+        self.db.commit();calls=[]
+        with patch('imessage_delivery.snapshot',return_value=1):
+            process_queue(self.db,self.base,lambda text,*a:calls.append(text),lambda _:None,
+                          observer=lambda *a:('not_found',None),now=1000)
+        self.assertTrue(calls[0].endswith('old'))
+        self.assertTrue(calls[1].endswith('new'))
+
     def test_reports_require_all_parts(self):
         command=self.outgoing(2)
         report={'digest':'r1','number':NUMBER,'mr':1,'submitted':100,'status':0}

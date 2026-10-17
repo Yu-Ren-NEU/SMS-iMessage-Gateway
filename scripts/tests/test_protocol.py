@@ -20,6 +20,14 @@ class ProtocolTests(unittest.TestCase):
   self.assertEqual(list(groups([item]))[0][2],'hello')
  def test_invalid_timestamp_does_not_mix(self):
   self.assertEqual(list(groups([fragment(1,'bad','a'),fragment(2,'bad','b')])),[])
+ def test_reused_sim_slots_do_not_reverse_chronology(self):
+  newer=fragment(1,'62901201039023','new');newer.update(ref=None,total=None,part=None,index=1,content='new')
+  older=fragment(1,'62901201036023','old');older.update(ref=None,total=None,part=None,index=19,content='old')
+  self.assertEqual([r[2] for r in groups([newer,older])],['old','new'])
+ def test_multipart_order_uses_earliest_fragment_timestamp(self):
+  short=fragment(1,'62901201038023','s');short.update(ref=None,total=None,part=None,content='short')
+  parts=[fragment(2,'62901201039023','b'),fragment(1,'62901201036023','a')]
+  self.assertEqual([r[2] for r in groups([short]+parts)],['12','short'])
  def test_explicit_command(self):
   self.assertEqual(parse_command("#sms +15550000000 Hello"),("+15550000000","Hello"))
   self.assertIsNone(parse_command("#sms 15550000000 Hello"))

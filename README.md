@@ -125,7 +125,7 @@ sequenceDiagram
 
 The sender does not request or wait for carrier delivery reports and does not send 24-hour report timeout reminders.
 
-Incoming SMS is polled about every five seconds; commands about every three seconds. Network conditions, Messages responsiveness, and Mac sleep affect latency. Multipart grouping uses sender, reference, total segment count, and a one-hour window; timestamps need not match exactly. Incomplete messages remain on the SIM. Complete messages are persisted before SIM cleanup, independently of iMessage availability.
+Incoming SMS uses a one-second idle polling interval; commands are polled about every three seconds. Actual scan intervals include modem and queue processing time. Carrier delivery-report storage is no longer polled. Complete messages in the same scan are sorted by earliest SMSC timestamp with SIM index as a tie-breaker; eligible queue records are processed by enqueue time and insertion order, without prioritizing new records over older retries. Carrier/network arrival order, incomplete multipart messages, retry backoff and iMessage transport can still affect the order seen on the phone. Network conditions, Messages responsiveness, and Mac sleep affect latency. Multipart grouping uses sender, reference, total segment count, and a one-hour window; timestamps need not match exactly. Incomplete messages remain on the SIM. Complete messages are persisted before SIM cleanup, independently of iMessage availability.
 
 ## Installation
 
@@ -178,7 +178,7 @@ The script settings control the forwarding destination and permitted command sou
 
 | Requirement | Purpose |
 |---|---|
-| Full Disk Access | Read-only access to `~/Library/Messages/chat.db` for commands and delivery observation. In System Settings → Privacy & Security → Full Disk Access, add the actual Python interpreter shown by the installer. A terminal used for manual checks may need its own authorization. |
+| Full Disk Access | Read-only access to `~/Library/Messages/chat.db` for commands and reconciliation of uncertain submissions. In System Settings → Privacy & Security → Full Disk Access, add the actual Python interpreter shown by the installer. A terminal used for manual checks may need its own authorization. |
 | Automation → Messages | Allow the responsible Python/terminal process to control Messages using AppleScript. Approve the first automation prompt. The displayed permission owner depends on the OS and interpreter. |
 | iMessage login and connectivity | Messages need not remain in the foreground. The bridge reopens it when closed and attempts recovery after timeouts. |
 | Logged-in, awake Mac | LaunchAgents run after user login, not before login. Sleep and shutdown suspend the bridge. Keep the Mac powered and connected. |
@@ -215,6 +215,8 @@ The destination must use international `+` format. Bodies contain 1–1000 chara
 - **iMessage:** successful AppleScript submission completes forwarding (`submitted` is a terminal queue state, as is legacy `delivered`). No recipient delivery confirmation is required, and these messages are not rechecked or resent if they disappear from Messages history. Uncertain submissions still reconcile recipient, body, outgoing record and GUID before retrying; unavailable database permissions or ambiguous matches prevent blind resends. Failed submissions can retry with backoff, at most eight attempts.
 - **Outgoing SMS:** success is acknowledged immediately after every segment returns `+CMGS` and `OK`. Carrier reports are not requested or awaited, and no 24-hour timeout notice is generated. Submission errors or uncertain results still produce a notice without automatic resend, to avoid duplicates. Success confirms modem submission, not receipt or reading by the recipient.
 - **Health:** SIM readiness, network registration, signal, and SMS storage are checked about once a minute. Persistent anomalies produce alerts, roughly hourly while unresolved, followed by recovery notices. This cannot directly identify an unpaid balance. An iMessage outage can also prevent alerts from arriving.
+
+Successful submission logs include queue age and AppleScript submission duration, without message bodies, to help distinguish local queue delays from carrier or iMessage transport delays.
 
 ### Automatic forwarding recovery
 
